@@ -103,7 +103,7 @@
         </div>
 
         <div class="p-4 bg-black/20 text-center text-[10px] text-zinc-600 border-t border-white/5 font-mono">
-            HYDROSCREEN v1.0.0
+            HYDROSCREEN v1.1.0
         </div>
     </div>
 </div>
