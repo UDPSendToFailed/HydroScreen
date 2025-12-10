@@ -1,0 +1,57 @@
+name: Release HydroScreen
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Tag name (e.g. v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+      draft:
+        description: 'Draft Release?'
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive 
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install Frontend Dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Build App & Sidecar
+        run: npm run tauri build
+        env:
+          NO_STRIP: true 
+
+      - name: Upload Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag_name }}
+          name: HydroScreen ${{ github.event.inputs.tag_name }}
+          draft: ${{ github.event.inputs.draft }}
+          prerelease: false
+          files: |
+            src-tauri/target/release/bundle/nsis/*.exe
