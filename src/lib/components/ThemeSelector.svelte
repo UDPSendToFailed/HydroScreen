@@ -1,25 +1,59 @@
 <script lang="ts">
-    import { createEventDispatcher } from 'svelte';
+    import { createEventDispatcher, onMount } from 'svelte';
     import { settings } from '$lib/stores/settings';
-    import { themeRegistry } from '$lib/stores/themeStore';
-    import { LayoutTemplate, CheckCircle2, Settings, Plus, Trash2, Loader2 } from 'lucide-svelte';
+    import { themeRegistry, refreshThemes } from '$lib/stores/themeStore';
+    import { LayoutTemplate, CheckCircle2, Settings, Plus, Trash2 } from 'lucide-svelte';
     import { open } from '@tauri-apps/plugin-dialog';
-    import { readTextFile } from '@tauri-apps/plugin-fs';
+    import { readTextFile, writeTextFile, remove, BaseDirectory } from '@tauri-apps/plugin-fs';
     import ConfirmationModal from '$lib/components/ConfirmationModal.svelte';
+    import ErrorModal from '$lib/components/ErrorModal.svelte';
+    import { get } from 'svelte/store';
 
     const dispatch = createEventDispatcher();
 
-    // Modal State
+    // Modal States
     let showDeleteModal = false;
-    let themeToDelete: { index: number; id: string } | null = null;
-    let importing = false;
+    let themeToDelete: { fileName: string; id: string } | null = null;
+    
+    // Error State
+    let showErrorModal = false;
+    let errorMessage = "";
+
+    onMount(() => {
+        refreshThemes();
+    });
 
     function select(id: string) {
         settings.setActiveTheme(id);
     }
 
+    // Strict Validation
+    function validateThemeObject(obj: any): string[] {
+        const errors: string[] = [];
+        
+        if (!obj || typeof obj !== 'object') {
+            return ["Script executed but did not return a valid object. Did you forget 'return {' ?"];
+        }
+
+        const requiredStrings = ['id', 'name', 'author', 'description'];
+        requiredStrings.forEach(field => {
+            if (!obj[field] || typeof obj[field] !== 'string') {
+                errors.push(`Missing or invalid property: '${field}'`);
+            }
+        });
+
+        if (typeof obj.renderFn !== 'function') {
+            errors.push("Missing 'renderFn'. It must be a function.");
+        }
+
+        if (!Array.isArray(obj.slots)) {
+            errors.push("'slots' must be an array.");
+        }
+
+        return errors;
+    }
+
     async function importTheme() {
-        importing = true;
         try {
             const path = await open({
                 multiple: false,
@@ -28,25 +62,71 @@
 
             if (path) {
                 const code = await readTextFile(path);
-                settings.addCustomTheme(code);
+                
+                // 1. Syntax Check (Compilation)
+                let themeObj;
+                try {
+                    const createTheme = new Function(code);
+                    themeObj = createTheme();
+                } catch (syntaxErr: any) {
+                    // This catches "Unexpected identifier", "Missing comma", etc.
+                    console.error("Syntax Error", syntaxErr);
+                    errorMessage = `Javascript Syntax Error:\n${syntaxErr.message}\n\nCheck for missing commas or quotes in your file.`;
+                    showErrorModal = true;
+                    return;
+                }
+
+                // 2. Structure Check
+                const validationErrors = validateThemeObject(themeObj);
+                
+                if (validationErrors.length > 0) {
+                    errorMessage = "Invalid Theme Structure:\n• " + validationErrors.join("\n• ");
+                    showErrorModal = true;
+                    return;
+                }
+
+                // 3. ID Validation
+                const id = themeObj.id;
+                // Simple regex to ensure ID is safe for filenames
+                if (!/^[a-z0-9-_]+$/i.test(id)) {
+                    errorMessage = `Invalid ID: '${id}'.\nIDs must only contain letters, numbers, hyphens, and underscores.`;
+                    showErrorModal = true;
+                    return;
+                }
+
+                const filename = `${id}.js`;
+
+                // 4. Save & Refresh
+                await writeTextFile(`themes/${filename}`, code, { baseDir: BaseDirectory.AppData });
+                await refreshThemes();
             }
-        } catch (e) {
+        } catch (e: any) {
             console.error("Import failed", e);
-            // Could add user notification here
-        } finally {
-            importing = false;
+            errorMessage = `System Error:\n${e.message || e}`;
+            showErrorModal = true;
         }
     }
 
-    function requestDelete(e: MouseEvent, index: number, id: string) {
+    function requestDelete(e: MouseEvent, fileName: string, id: string) {
         e.stopPropagation();
-        themeToDelete = { index, id };
+        themeToDelete = { fileName, id };
         showDeleteModal = true;
     }
 
-    function confirmDelete() {
+    async function confirmDelete() {
         if (themeToDelete) {
-            settings.removeCustomTheme(themeToDelete.index, themeToDelete.id);
+            try {
+                await remove(`themes/${themeToDelete.fileName}`, { baseDir: BaseDirectory.AppData });
+                
+                const currentSettings = get(settings);
+                if (currentSettings.activeThemeId === themeToDelete.id) {
+                    settings.setActiveTheme('liquid-flow');
+                }
+
+                await refreshThemes();
+            } catch (e) {
+                console.error("Delete failed", e);
+            }
         }
         showDeleteModal = false;
         themeToDelete = null;
@@ -55,14 +135,21 @@
 
 <div class="flex flex-col h-full bg-zinc-900/80 border-r border-white/5 backdrop-blur-xl relative">
     
-    <!-- Delete Confirmation Overlay -->
     {#if showDeleteModal}
         <ConfirmationModal 
             title="Remove Theme?"
-            message="This custom theme will be permanently removed from your library."
-            confirmText="Remove"
+            message="This custom theme will be permanently deleted from your library."
+            confirmText="Delete"
             on:cancel={() => showDeleteModal = false}
             on:confirm={confirmDelete}
+        />
+    {/if}
+
+    {#if showErrorModal}
+        <ErrorModal 
+            title="Import Failed"
+            message={errorMessage}
+            on:close={() => showErrorModal = false}
         />
     {/if}
 
@@ -74,23 +161,18 @@
             </div>
             <p class="text-xs text-zinc-500">Select layout.</p>
         </div>
-        <button on:click={importTheme} disabled={importing} class="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-zinc-400 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed" title="Import .js Theme">
-            {#if importing}
-                <Loader2 size={18} class="animate-spin" />
-            {:else}
-                <Plus size={18} />
-            {/if}
+        <button on:click={importTheme} class="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-zinc-400 hover:text-white transition-colors" title="Import .js Theme">
+            <Plus size={18} />
         </button>
     </div>
 
-    <div class="flex-1 overflow-y-auto p-3 space-y-2" role="list">
+    <div class="flex-1 overflow-y-auto p-3 space-y-2">
         {#each $themeRegistry as theme}
-            <button
+            <button 
                 on:click={() => select(theme.id)}
-                aria-label="Select theme {theme.name} by {theme.author}"
                 class="w-full text-left p-3 rounded-xl border transition-all duration-200 group relative overflow-hidden
-                {$settings.activeThemeId === theme.id
-                    ? 'bg-indigo-600/10 border-indigo-500/50 shadow-[0_0_20px_-5px_rgba(99,102,241,0.3)]'
+                {$settings.activeThemeId === theme.id 
+                    ? 'bg-indigo-600/10 border-indigo-500/50 shadow-[0_0_20px_-5px_rgba(99,102,241,0.3)]' 
                     : 'bg-transparent border-transparent hover:bg-white/5'}"
             >
                 <div class="flex justify-between items-start relative z-10">
@@ -112,16 +194,15 @@
                         {/if}
                         
                         {#if (theme as any)._isCustom}
-                            <span
+                            <div 
                                 role="button"
                                 tabindex="0"
-                                aria-label="Delete custom theme {theme.name}"
-                                on:click={(e) => requestDelete(e, (theme as any)._customIndex, theme.id)}
-                                on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); requestDelete(e, (theme as any)._customIndex, theme.id); } }}
-                                class="p-1.5 hover:bg-red-500/20 text-zinc-600 hover:text-red-400 rounded transition-colors cursor-pointer"
+                                on:click={(e) => requestDelete(e, (theme as any)._fileName, theme.id)} 
+                                on:keydown={() => {}}
+                                class="p-1.5 hover:bg-red-500/20 text-zinc-600 hover:text-red-400 rounded transition-colors"
                             >
                                 <Trash2 size={14} />
-                            </span>
+                            </div>
                         {/if}
                     </div>
                 </div>

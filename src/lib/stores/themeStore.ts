@@ -1,5 +1,5 @@
-import { derived } from 'svelte/store';
-import { settings } from './settings';
+import { writable } from 'svelte/store';
+import { readDir, readTextFile, BaseDirectory, mkdir, exists } from '@tauri-apps/plugin-fs';
 import type { ThemeDefinition } from '$lib/types';
 
 import { theme as CustomMedia } from '$lib/themes/library/custom_media';
@@ -16,60 +16,60 @@ const BUILT_INS: ThemeDefinition[] = [
     TerminalZero
 ];
 
-export const themeRegistry = derived(settings, ($settings) => {
-    const customThemes: ThemeDefinition[] = [];
+function createThemeStore() {
+    const { subscribe, set, update } = writable<ThemeDefinition[]>(BUILT_INS);
 
-    if ($settings.customThemes && Array.isArray($settings.customThemes)) {
-        $settings.customThemes.forEach((code, index) => {
-            // Skip themes with ES module syntax as they can't be executed in global scope
-            if (code.includes('import ') || code.includes('export ')) {
-                console.warn(`Skipping custom theme ${index}: Contains ES module syntax which is not supported`);
-                return;
-            }
-
+    return {
+        subscribe,
+        load: async () => {
             try {
-                // Safety: Create function
-                const createTheme = new Function(code);
-                const themeObj = createTheme() as ThemeDefinition;
-
-                // Validate: Ensure required properties exist and are correct types
-                if (themeObj &&
-                    typeof themeObj.id === 'string' &&
-                    typeof themeObj.name === 'string' &&
-                    typeof themeObj.author === 'string' &&
-                    typeof themeObj.description === 'string' &&
-                    Array.isArray(themeObj.slots) &&
-                    Array.isArray(themeObj.options) &&
-                    typeof themeObj.renderFn === 'function') {
-
-                    // Sanitize: Ensure critical arrays have valid items
-                    themeObj.slots = themeObj.slots.filter(slot =>
-                        typeof slot.id === 'string' &&
-                        typeof slot.label === 'string' &&
-                        ['number', 'text'].includes(slot.type)
-                    );
-                    themeObj.options = themeObj.options.filter(opt =>
-                        typeof opt.id === 'string' &&
-                        typeof opt.label === 'string' &&
-                        ['color', 'boolean', 'range', 'file'].includes(opt.type) &&
-                        typeof opt.default !== 'undefined'
-                    );
-
-                    // Tag as custom
-                    (themeObj as any)._isCustom = true;
-                    (themeObj as any)._customIndex = index;
-
-                    // Handle collisions
-                    if (BUILT_INS.find(t => t.id === themeObj.id)) {
-                        themeObj.id = `${themeObj.id}_custom_${index}`;
-                    }
-                    customThemes.push(themeObj);
+                const hasDir = await exists('themes', { baseDir: BaseDirectory.AppData });
+                if (!hasDir) {
+                    await mkdir('themes', { baseDir: BaseDirectory.AppData, recursive: true });
+                    set([...BUILT_INS]);
+                    return;
                 }
-            } catch (e) {
-                console.error("Failed to load custom theme", e);
-            }
-        });
-    }
 
-    return [...BUILT_INS, ...customThemes];
-});
+                const entries = await readDir('themes', { baseDir: BaseDirectory.AppData });
+                const customThemes: ThemeDefinition[] = [];
+
+                for (const entry of entries) {
+                    if (entry.isFile && entry.name.endsWith('.js')) {
+                        try {
+                            const code = await readTextFile(`themes/${entry.name}`, { baseDir: BaseDirectory.AppData });
+                            const createTheme = new Function(code);
+                            const themeObj = createTheme() as ThemeDefinition;
+
+                            if (themeObj && themeObj.id) {
+                                if(!themeObj.options) themeObj.options = [];
+                                if(!themeObj.slots) themeObj.slots = [];
+
+                                (themeObj as any)._isCustom = true;
+                                (themeObj as any)._fileName = entry.name;
+                                
+                                if (BUILT_INS.find(t => t.id === themeObj.id)) {
+                                    themeObj.id = `${themeObj.id}_custom`;
+                                }
+                                customThemes.push(themeObj);
+                            }
+                        } catch (err) {
+                            console.error(`Error loading theme ${entry.name}`, err);
+                        }
+                    }
+                }
+
+                set([...BUILT_INS, ...customThemes]);
+
+            } catch (e) {
+                console.error("Theme load failed", e);
+                set([...BUILT_INS]);
+            }
+        },
+        refresh: async () => {
+            await themeRegistry.load();
+        }
+    };
+}
+
+export const themeRegistry = createThemeStore();
+export const refreshThemes = themeRegistry.load;

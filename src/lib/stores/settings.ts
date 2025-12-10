@@ -1,7 +1,9 @@
 import { writable } from 'svelte/store';
 import { load } from '@tauri-apps/plugin-store';
+import { BaseDirectory, writeTextFile, mkdir, exists } from '@tauri-apps/plugin-fs';
 import type { SensorMapping } from '$lib/types';
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart';
+import { refreshThemes } from './themeStore';
 
 const STORE_PATH = 'settings.json';
 
@@ -14,19 +16,18 @@ interface AppSettings {
         autoStart: boolean;
         startMinimized: boolean;
     };
-    customThemes: string[];
+    customThemes?: string[]; 
 }
 
 const defaultSettings: AppSettings = {
-    activeThemeId: 'liquid-flow',
+    activeThemeId: 'liquid-flow', // Updated default per request
     mappings: {},
     themeConfigs: {},
     appBehavior: {
         minimizeToTray: true,
         autoStart: false,
         startMinimized: false
-    },
-    customThemes: []
+    }
 };
 
 let saveTimer: any = null;
@@ -41,7 +42,33 @@ function createSettingsStore() {
             try {
                 const diskStore = await load(STORE_PATH);
                 const val = await diskStore.get<AppSettings>('config');
+                
                 if (val) {
+                    if (val.customThemes && val.customThemes.length > 0) {
+                        try {
+                            const hasDir = await exists('themes', { baseDir: BaseDirectory.AppData });
+                            if (!hasDir) {
+                                await mkdir('themes', { baseDir: BaseDirectory.AppData, recursive: true });
+                            }
+
+                            for (const code of val.customThemes) {
+                                const idMatch = code.match(/id:\s*['"]([^'"]+)['"]/);
+                                if (idMatch && idMatch[1]) {
+                                    const id = idMatch[1];
+                                    await writeTextFile(`themes/${id}.js`, code, { baseDir: BaseDirectory.AppData });
+                                }
+                            }
+                            
+                            val.customThemes = [];
+                            await diskStore.set('config', val);
+                            await diskStore.save();
+                            await refreshThemes();
+
+                        } catch (migrationErr) {
+                            console.error("Migration failed:", migrationErr);
+                        }
+                    }
+
                     set({ 
                         ...defaultSettings, 
                         ...val, 
@@ -102,24 +129,7 @@ function createSettingsStore() {
                 return next;
             });
         },
-        addCustomTheme: (code: string) => {
-            update(s => {
-                const next = { ...s, customThemes: [...s.customThemes, code] };
-                triggerSave(next);
-                return next;
-            });
-        },
-        removeCustomTheme: (index: number, idToDelete: string) => {
-            update(s => {
-                const next = { ...s };
-                next.customThemes.splice(index, 1);
-                if (next.activeThemeId === idToDelete) {
-                    next.activeThemeId = 'liquid-flow';
-                }
-                triggerSave(next);
-                return next;
-            });
-        }
+        addCustomTheme: (code: string) => { return; }
     };
 }
 

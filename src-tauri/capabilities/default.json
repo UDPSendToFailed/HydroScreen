@@ -17,11 +17,18 @@
     "shell:allow-open",
     "core:event:allow-listen",
     "dialog:default",
-    "fs:default",
     "store:default",
     "autostart:default",
     "core:tray:default",
     "process:default",
+    "fs:default",
+    "fs:allow-appdata-read-recursive",
+    "fs:allow-appdata-write-recursive",
+    "fs:allow-appdata-meta-recursive",
+    {
+      "identifier": "fs:scope",
+      "allow": [{ "path": "$APP_DATA/**" }]
+    },
     {
       "identifier": "shell:allow-execute",
       "allow": [
