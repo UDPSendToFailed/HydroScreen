@@ -32,10 +32,12 @@ fn main() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec![])))
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            let _ = app.get_webview_window("main").expect("no main window").set_focus();
+        }))
         .manage(ImageChannel { tx: Mutex::new(tx) })
         .invoke_handler(tauri::generate_handler![send_frame])
         .setup(move |app| {
-            // --- SYSTEM TRAY ---
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let show_i = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
@@ -64,7 +66,6 @@ fn main() {
                     }
                 })
                 .build(app)?;
-            // -------------------
 
             sidecar_handler::spawn_sensor_bridge(app.handle().clone());
             
