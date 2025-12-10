@@ -1,0 +1,36 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capability for the main window",
+  "windows": ["main"],
+  "permissions": [
+    "core:app:default",
+    "core:webview:default",
+    "core:window:allow-close",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-start-dragging",
+    "core:window:allow-hide",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
+    "shell:allow-execute",
+    "shell:allow-open",
+    "core:event:allow-listen",
+    "dialog:default",
+    "fs:default",
+    "store:default",
+    "autostart:default",
+    "core:tray:default",
+    "process:default",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "binaries/lhm-bridge",
+          "cmd": "",
+          "sidecar": true
+        }
+      ]
+    }
+  ]
+}

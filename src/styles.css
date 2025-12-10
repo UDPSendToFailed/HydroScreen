@@ -1,0 +1,57 @@
+@import "tailwindcss";
+
+@theme {
+  /* Migrate your custom colors here */
+  --color-glass: rgba(255, 255, 255, 0.05);
+  --color-glassBorder: rgba(255, 255, 255, 0.1);
+  
+  /* Font settings (Optional, keeps your existing look) */
+  --font-sans: Inter, Avenir, Helvetica, Arial, sans-serif;
+}
+
+/* Global Reset */
+:root {
+  color-scheme: dark;
+}
+
+body {
+  background-color: #09090b; /* zinc-950 */
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+  font-family: var(--font-sans);
+}
+
+/* Scrollbar Polish */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
+}
+
+/* Fluent Panel Component Class */
+@layer components {
+  .fluent-panel {
+    @apply rounded-2xl border border-white/5 bg-zinc-900/40 backdrop-blur-xl transition-all duration-300 ease-out;
+    box-shadow: inset 0 0 0 1px hsla(0, 0%, 100%, 0.05);
+  }
+}
+
+/* Aurora Background (Legacy support if you still use it) */
+.aurora-background {
+  overflow: hidden;
+  position: relative;
+  background-color: #09090b;
+}

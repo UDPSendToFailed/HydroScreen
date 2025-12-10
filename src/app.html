@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="%sveltekit.assets%/favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OpenCue Screen</title>
+    %sveltekit.head%
+  </head>
+  <body data-sveltekit-preload-data="hover">
+    <div style="display: contents">%sveltekit.body%</div>
+    
+    <script>
+      // Disable Right Click Menu
+      document.addEventListener('contextmenu', event => event.preventDefault());
+      
+      // Disable standard browser shortcuts (F5, Ctrl+R, etc) if you want strict kiosk mode
+      document.addEventListener('keydown', event => {
+        if ((event.ctrlKey && event.key === 'r') || event.key === 'F5') {
+            event.preventDefault();
+        }
+      });
+    </script>
+  </body>
+</html>
