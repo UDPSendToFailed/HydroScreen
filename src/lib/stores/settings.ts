@@ -1,4 +1,4 @@
-import { writable } from 'svelte/store';
+import { writable, get } from 'svelte/store';
 import { load } from '@tauri-apps/plugin-store';
 import { BaseDirectory, writeTextFile, mkdir, exists } from '@tauri-apps/plugin-fs';
 import type { SensorMapping } from '$lib/types';
@@ -6,6 +6,8 @@ import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart';
 import { refreshThemes } from './themeStore';
 
 const STORE_PATH = 'settings.json';
+
+export const settingsReady = writable(false);
 
 interface AppSettings {
     activeThemeId: string;
@@ -20,7 +22,7 @@ interface AppSettings {
 }
 
 const defaultSettings: AppSettings = {
-    activeThemeId: 'liquid-flow', // Updated default per request
+    activeThemeId: 'liquid-flow',
     mappings: {},
     themeConfigs: {},
     appBehavior: {
@@ -39,6 +41,8 @@ function createSettingsStore() {
     return {
         subscribe,
         init: async () => {
+            if (get(settingsReady)) return;
+
             try {
                 const diskStore = await load(STORE_PATH);
                 const val = await diskStore.get<AppSettings>('config');
@@ -82,6 +86,8 @@ function createSettingsStore() {
                 }
             } catch (e) {
                 console.error("Settings init failed", e);
+            } finally {
+                settingsReady.set(true);
             }
         },
         setActiveTheme: async (id: string) => {

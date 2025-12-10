@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount, onDestroy } from 'svelte';
     import { invoke } from '@tauri-apps/api/core';
-    import { readFile } from '@tauri-apps/plugin-fs';
+    import { readFile, BaseDirectory } from '@tauri-apps/plugin-fs';
     import { rawHardware, lastUpdate } from '$lib/stores/sensors';
     import { settings } from '$lib/stores/settings';
     import { themeRegistry } from '$lib/stores/themeStore';
@@ -32,28 +32,27 @@
         ...activeTheme.options?.reduce((acc, opt) => ({...acc, [opt.id]: opt.default}), {}),
         ...config
     } : {};
-
-    $: if (activeTheme && effectiveConfig && activeTheme.options) {
-        activeTheme.options.forEach(opt => {
-            if (opt.type === 'file') {
-                const path = effectiveConfig[opt.id];
-                if (path) {
-                    loadAsset(opt.id, path);
-                } else {
-                    if (loadedAssets[opt.id]) {
-                        delete loadedAssets[opt.id];
-                        loadedAssets = loadedAssets; // Trigger reactivity
-                    }
-                }
+    
+    $: fileAssetsToLoad = activeTheme?.options
+        ?.filter(opt => opt.type === 'file')
+        .map(opt => ({ id: opt.id, path: effectiveConfig[opt.id] })) || [];
+    
+    $: fileAssetsToLoad.forEach(({ id, path }) => {
+        if (path) {
+            loadAsset(id, path);
+        } else {
+            if (loadedAssets[id]) {
+                delete loadedAssets[id];
+                loadedAssets = loadedAssets;
             }
-        });
-    }
-
+        }
+    });
+    
     async function loadAsset(id: string, path: string) {
         if (loadedAssets[id] && (loadedAssets[id] as any)._src === path) return;
         
         try {
-            const fileBytes = await readFile(path);
+            const fileBytes = await readFile(path, { baseDir: BaseDirectory.AppData });
             const blob = new Blob([fileBytes]);
             const objectUrl = URL.createObjectURL(blob);
             
@@ -64,12 +63,16 @@
             } else {
                 const img = new Image();
                 img.src = objectUrl;
-                await new Promise((resolve) => img.onload = resolve);
+                await new Promise((resolve, reject) => {
+                    img.onload = resolve;
+                    img.onerror = reject;
+                });
                 (img as any)._src = path;
                 loadedAssets[id] = img;
             }
             loadedAssets = loadedAssets; 
         } catch (e) { 
+            console.error("Failed to load asset:", path, e);
             if (loadedAssets[id]) {
                 delete loadedAssets[id];
                 loadedAssets = loadedAssets;
