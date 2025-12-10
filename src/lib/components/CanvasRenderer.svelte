@@ -1,7 +1,7 @@
 <script lang="ts">
     import { onMount, onDestroy } from 'svelte';
     import { invoke } from '@tauri-apps/api/core';
-    import { readFile } from '@tauri-apps/plugin-fs';
+    import { readFile, BaseDirectory } from '@tauri-apps/plugin-fs';
     import { rawHardware, lastUpdate } from '$lib/stores/sensors';
     import { settings } from '$lib/stores/settings';
     import { themeRegistry } from '$lib/stores/themeStore';
@@ -32,28 +32,27 @@
         ...activeTheme.options?.reduce((acc, opt) => ({...acc, [opt.id]: opt.default}), {}),
         ...config
     } : {};
-
-    $: if (activeTheme && effectiveConfig && activeTheme.options) {
-        activeTheme.options.forEach(opt => {
-            if (opt.type === 'file') {
-                const path = effectiveConfig[opt.id];
-                if (path) {
-                    loadAsset(opt.id, path);
-                } else {
-                    if (loadedAssets[opt.id]) {
-                        delete loadedAssets[opt.id];
-                        loadedAssets = loadedAssets; // Trigger reactivity
-                    }
-                }
+    
+    $: fileAssetsToLoad = activeTheme?.options
+        ?.filter(opt => opt.type === 'file')
+        .map(opt => ({ id: opt.id, path: effectiveConfig[opt.id] })) || [];
+    
+    $: fileAssetsToLoad.forEach(({ id, path }) => {
+        if (path) {
+            loadAsset(id, path);
+        } else {
+            if (loadedAssets[id]) {
+                delete loadedAssets[id];
+                loadedAssets = loadedAssets;
             }
-        });
-    }
-
+        }
+    });
+    
     async function loadAsset(id: string, path: string) {
         if (loadedAssets[id] && (loadedAssets[id] as any)._src === path) return;
         
         try {
-            const fileBytes = await readFile(path);
+            const fileBytes = await readFile(path, { baseDir: BaseDirectory.AppData });
             const blob = new Blob([fileBytes]);
             const objectUrl = URL.createObjectURL(blob);
             
@@ -64,12 +63,16 @@
             } else {
                 const img = new Image();
                 img.src = objectUrl;
-                await new Promise((resolve) => img.onload = resolve);
+                await new Promise((resolve, reject) => {
+                    img.onload = resolve;
+                    img.onerror = reject;
+                });
                 (img as any)._src = path;
                 loadedAssets[id] = img;
             }
             loadedAssets = loadedAssets; 
         } catch (e) { 
+            console.error("Failed to load asset:", path, e);
             if (loadedAssets[id]) {
                 delete loadedAssets[id];
                 loadedAssets = loadedAssets;
@@ -115,12 +118,22 @@
         const h = canvas.height;
         const { values, formatted } = getData($rawHardware);
         tick++; 
+        
+        drawAndSend(w, h, values, formatted, tick);
+    }
 
+    async function drawAndSend(w: number, h: number, values: any, formatted: any, currentTick: number) {
         try {
             if (activeTheme.renderFn) {
-                activeTheme.renderFn(ctx, w, h, values, formatted, effectiveConfig, tick, loadedAssets);
+                const renderResult = activeTheme.renderFn(ctx, w, h, values, formatted, effectiveConfig, currentTick, loadedAssets);
+
+                if (renderResult && typeof renderResult.then === 'function') {
+                    await renderResult;
+                }
             }
-        } catch (e) { console.error("Render Error:", e); }
+        } catch (e) { 
+            console.error("Render Error:", e); 
+        }
 
         if (!isSending && !isOffline) {
             isSending = true;
@@ -168,7 +181,7 @@
     {#if !activeTheme && !isOffline}
         <div class="absolute inset-0 z-40 flex flex-col items-center justify-center bg-zinc-900">
             <Loader2 size={32} class="text-indigo-500 animate-spin mb-2" />
-            <span class="text-xs text-zinc-500 uppercase tracking-widest">Loading Theme...</span>
+            <span class="text-xs text-zinc-500 uppercase font-widest">Loading Theme...</span>
         </div>
     {/if}
 </div>

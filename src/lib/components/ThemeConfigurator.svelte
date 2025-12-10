@@ -6,6 +6,7 @@
     import ConfirmationModal from '$lib/components/ConfirmationModal.svelte';
     import { Cpu, Zap, Activity, Thermometer, Palette, Check, Image as ImageIcon, MousePointer2, Type, RotateCcw, X } from 'lucide-svelte';
     import { open } from '@tauri-apps/plugin-dialog';
+    import { BaseDirectory, writeFile, mkdir, exists, readFile, remove } from '@tauri-apps/plugin-fs';
     import type { Sensor, ThemeOption } from '$lib/types';
 
     let activeTab: 'data' | 'style' = 'data';
@@ -105,23 +106,78 @@
         return config[opt.id] !== undefined && config[opt.id] !== opt.default;
     }
 
-    function resetOption(opt: ThemeOption) {
-        if (!activeTheme) return;
-        settings.updateThemeConfig(activeTheme.id, opt.id, opt.default);
-    }
+    async function resetOption(opt: ThemeOption) {
+            if (!activeTheme) return;
 
-    function confirmResetAll() {
-        if (activeTheme) {
-            settings.resetThemeConfig(activeTheme.id);
+            if (opt.type === 'file') {
+                const oldPath = config[opt.id];
+                if (oldPath && typeof oldPath === 'string') {
+                    try {
+                        await remove(oldPath, { baseDir: BaseDirectory.AppData });
+                    } catch (e) {
+                    }
+                }
+            }
+
+            settings.updateThemeConfig(activeTheme.id, opt.id, opt.default);
         }
-        showResetModal = false;
-    }
+
+    async function confirmResetAll() {
+            if (activeTheme && activeTheme.options) {
+                for (const opt of activeTheme.options) {
+                    if (opt.type === 'file') {
+                        const pathToDelete = config[opt.id];
+                        if (pathToDelete && typeof pathToDelete === 'string') {
+                            try {
+                                await remove(pathToDelete, { baseDir: BaseDirectory.AppData });
+                            } catch (e) {
+                                // Ignore errors
+                            }
+                        }
+                    }
+                }
+                
+                // After cleanup, reset the entire theme config
+                settings.resetThemeConfig(activeTheme.id);
+            }
+            showResetModal = false;
+        }
 
     async function selectFile(optionId: string) {
         try {
-            const file = await open({ multiple: false, directory: false, filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif'] }] });
-            if (file) updateConfig(optionId, file);
-        } catch (e) { console.error(e); }
+            const selectedPath = await open({
+                multiple: false,
+                directory: false,
+                filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif'] }]
+            });
+
+            if (typeof selectedPath === 'string') {
+
+                const oldPath = config[optionId];
+                
+                if (oldPath && typeof oldPath === 'string') {
+                    try {
+                        await remove(oldPath, { baseDir: BaseDirectory.AppData });
+                        console.log(`Cleaned up old image: ${oldPath}`);
+                    } catch (e) {
+                    }
+                }
+
+                const hasDir = await exists('images', { baseDir: BaseDirectory.AppData });
+                if (!hasDir) {
+                    await mkdir('images', { baseDir: BaseDirectory.AppData, recursive: true });
+                }
+
+                const fileBytes = await readFile(selectedPath);
+                const fileName = `${Date.now()}_${selectedPath.split(/[\\/]/).pop()}`;
+                const newPath = `images/${fileName}`;
+
+                await writeFile(newPath, fileBytes, { baseDir: BaseDirectory.AppData });
+                updateConfig(optionId, newPath);
+            }
+        } catch (e) { 
+            console.error("File selection/import failed:", e);
+        }
     }
 
     function toggleHw(id: string) { expandedHwId = expandedHwId === id ? null : id; }
@@ -322,11 +378,6 @@
                                         <div class="relative flex-1">
                                             <input type="text" id={opt.id} value={config[opt.id] ? config[opt.id].split(/[\\/]/).pop() : 'No file'} class="w-full h-10 bg-black/20 border border-white/10 rounded-lg px-3 text-sm font-mono text-zinc-500 truncate" readonly/>
                                         </div>
-                                        {#if config[opt.id]}
-                                            <button on:click={() => updateConfig(opt.id, null)} class="h-10 w-10 flex items-center justify-center bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition-colors border border-red-500/20" title="Clear File">
-                                                <X size={16} />
-                                            </button>
-                                        {/if}
                                         <button on:click={() => selectFile(opt.id)} class="h-10 px-4 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 rounded-lg transition-colors flex items-center gap-2"><ImageIcon size={16} /><span class="text-xs font-bold">BROWSE</span></button>
                                     </div>
                                 {/if}

@@ -18,7 +18,8 @@ export const theme: ThemeDefinition = {
         { id: 'overlayLabel', label: 'Overlay Text', type: 'text', default: '' },
         { id: 'textColor', label: 'Text Color', type: 'color', default: '#ffffff' }
     ],
-    renderFn: (ctx, w, h, values, formatted, config, tick, assets) => {
+
+    renderFn: async (ctx, w, h, values, formatted, config, tick, assets) => {
         const asset = assets['source'];
         const zoom = (config.zoom ?? 100) / 100;
         const panX = config.panX ?? 0;
@@ -27,22 +28,30 @@ export const theme: ThemeDefinition = {
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, w, h);
 
-        if (asset) {
-            let imgToDraw: HTMLImageElement | ImageBitmap | null = null;
+        let imgToDraw: HTMLImageElement | ImageBitmap | null = null;
 
+        if (asset) {
             if (asset instanceof HTMLImageElement) {
                 imgToDraw = asset;
             } 
             else if ((asset as any).frames) {
                 const gif = asset as GifData;
-                const ms = tick * 33; 
-                const loopTime = ms % gif.totalTime;
-                
-                let currentT = 0;
-                for(let f of gif.frames) {
-                    currentT += f.delay;
-                    if (currentT >= loopTime) {
-                        if(f.imageBitmap) imgToDraw = f.imageBitmap;
+
+                const frameTick = 33.33;
+                const totalTime = gif.totalTime || 1000;
+                const currentTime = (tick * frameTick) % totalTime;
+
+                let timeAccumulator = 0;
+
+                for (let f of gif.frames) {
+                    timeAccumulator += f.delay;
+
+                    if (timeAccumulator >= currentTime) {
+                        if (f.image instanceof ImageData) {
+                            imgToDraw = await createImageBitmap(f.image);
+                        } else {
+                            imgToDraw = f.image;
+                        }
                         break;
                     }
                 }
@@ -61,19 +70,17 @@ export const theme: ThemeDefinition = {
                 const drawW = imgW * finalScale;
                 const drawH = imgH * finalScale;
 
-                const centerX = w / 2;
-                const centerY = h / 2;
-                
-                const drawX = centerX - (drawW / 2) + panX;
-                const drawY = centerY - (drawH / 2) + panY;
+                const drawX = w / 2 - drawW / 2 + panX;
+                const drawY = h / 2 - drawH / 2 + panY;
 
                 ctx.drawImage(imgToDraw, drawX, drawY, drawW, drawH);
             }
+
         } else {
-            ctx.fillStyle = '#333';
+            ctx.fillStyle = 'white';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.font = 'bold 20px Inter';
+            ctx.font = 'bold 30px Arial';
             ctx.fillText("SELECT FILE IN SETTINGS", w/2, h/2);
         }
 
