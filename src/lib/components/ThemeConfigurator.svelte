@@ -7,6 +7,7 @@
     import { Cpu, Zap, Activity, Thermometer, Palette, Check, Image as ImageIcon, MousePointer2, Type, RotateCcw, X } from 'lucide-svelte';
     import { open } from '@tauri-apps/plugin-dialog';
     import { BaseDirectory, writeFile, mkdir, exists, readFile, remove } from '@tauri-apps/plugin-fs';
+    import { slide } from 'svelte/transition';
     import type { Sensor, ThemeOption } from '$lib/types';
 
     let activeTab: 'data' | 'style' = 'data';
@@ -300,7 +301,7 @@
                                 <span class="text-[10px] bg-white/5 border border-white/5 px-1.5 rounded text-zinc-500">{Object.values(hw.groups).flat().length}</span>
                             </button>
                             {#if expandedHwId === hw.Id || searchQuery}
-                                <div class="bg-black/10 p-2 grid grid-cols-1 gap-2 border-t border-white/5">
+                                <div transition:slide={{ duration: 200 }} class="bg-black/10 p-2 grid grid-cols-1 gap-2 border-t border-white/5">
                                     {#each Object.entries(hw.groups) as [type, sensors]}
                                         <div class="pl-2">
                                             <div class="text-[9px] font-bold text-zinc-600 uppercase tracking-widest mb-1 mt-2">{type}</div>
