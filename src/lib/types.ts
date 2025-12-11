@@ -24,7 +24,7 @@ export interface ThemeSlot {
 export interface ThemeOption {
     id: string;
     label: string;
-    type: 'color' | 'boolean' | 'range' | 'file' | 'text';
+    type: 'color' | 'boolean' | 'range' | 'file' | 'text' | 'font';
     default: any;
     min?: number;
     max?: number;

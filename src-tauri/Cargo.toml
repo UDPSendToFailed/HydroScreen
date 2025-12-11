@@ -25,3 +25,4 @@ async-trait = "0.1"
 crossbeam-channel = "0.5"
 tauri-plugin-process = "2.3.1"
 tauri-plugin-single-instance = { version = "2.3.6", features = ["deep-link"] }
+font-loader = "0.11"

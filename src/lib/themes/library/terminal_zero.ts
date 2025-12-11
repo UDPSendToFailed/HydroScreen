@@ -13,18 +13,20 @@ export const theme: ThemeDefinition = {
         { id: 'phosphor', label: 'Phosphor Color', type: 'color', default: '#33ff33' },
         { id: 'bloom', label: 'Glow Intensity', type: 'range', default: 50, min: 0, max: 100 },
         { id: 'topLabel', label: 'Top Label', type: 'text', default: 'PRIMARY_SENSOR_INPUT' },
-        { id: 'botLabel', label: 'Bottom Label', type: 'text', default: 'SECONDARY_SENSOR_INPUT' }
+        { id: 'botLabel', label: 'Bottom Label', type: 'text', default: 'SECONDARY_SENSOR_INPUT' },
+        { id: 'fontFamily', label: 'Font Family', type: 'font', default: 'Consolas' }
     ],
     renderFn: (ctx, w, h, values, formatted, config, tick) => {
         const topVal = formatted['top'] || 'N/A';
         const botVal = formatted['bot'] || 'N/A';
         const color = config.phosphor;
         const blurAmount = (config.bloom / 100) * 15;
+        const font = config.fontFamily || 'Consolas';
 
         ctx.fillStyle = '#020202';
         ctx.fillRect(0, 0, w, h);
 
-        ctx.font = 'bold 36px monospace';
+        ctx.font = `bold 36px "${font}"`;
         ctx.fillStyle = color;
         ctx.strokeStyle = color;
         ctx.textAlign = 'left';
@@ -35,14 +37,14 @@ export const theme: ThemeDefinition = {
         ctx.fillText('// HYDRO_BIOS v1.0', 40, 60);
         ctx.fillRect(40, 80, w - 80, 2);
 
-        ctx.font = '20px monospace';
+        ctx.font = `20px "${font}"`;
         ctx.fillText(config.topLabel.toUpperCase(), 40, 140);
-        ctx.font = 'bold 110px monospace';
+        ctx.font = `bold 110px "${font}"`;
         ctx.fillText(topVal, 35, 240);
 
-        ctx.font = '20px monospace';
+        ctx.font = `20px "${font}"`;
         ctx.fillText(config.botLabel.toUpperCase(), 40, 320);
-        ctx.font = 'bold 80px monospace';
+        ctx.font = `bold 80px "${font}"`;
         ctx.fillText(botVal, 35, 400);
 
         if (Math.floor(tick / 20) % 2 === 0) {

@@ -4,6 +4,7 @@ mod aio_communicator;
 mod sidecar_handler;
 
 use crossbeam_channel::{bounded, Sender};
+use font_loader::system_fonts;
 use std::sync::Mutex;
 use std::thread;
 use tauri::{Manager, State};
@@ -22,6 +23,14 @@ fn send_frame(jpeg_data: Vec<u8>, state: State<ImageChannel>) {
     }
 }
 
+#[tauri::command]
+fn get_system_fonts() -> Vec<String> {
+    let mut fonts = system_fonts::query_all();
+    fonts.sort();
+    fonts.dedup();
+    fonts
+}
+
 fn main() {
     let (tx, rx) = bounded::<Vec<u8>>(2);
 
@@ -36,7 +45,7 @@ fn main() {
             let _ = app.get_webview_window("main").expect("no main window").set_focus();
         }))
         .manage(ImageChannel { tx: Mutex::new(tx) })
-        .invoke_handler(tauri::generate_handler![send_frame])
+        .invoke_handler(tauri::generate_handler![send_frame, get_system_fonts])
         .setup(move |app| {
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let show_i = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;

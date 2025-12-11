@@ -14,11 +14,13 @@ export const theme: ThemeDefinition = {
         { id: 'waterColor', label: 'Liquid Color', type: 'color', default: '#4f46e5' },
         { id: 'bgColor', label: 'Background Color', type: 'color', default: '#0f172a' },
         { id: 'waveSpeed', label: 'Flow Speed', type: 'range', default: 20, min: 0, max: 100 },
-        { id: 'levelLabel', label: 'Sensor Label', type: 'text', default: '' }
+        { id: 'levelLabel', label: 'Sensor Label', type: 'text', default: '' },
+        { id: 'fontFamily', label: 'Font Family', type: 'font', default: 'Arial' }
     ],
     renderFn: (ctx, w, h, values, formatted, config, tick) => {
         const val = values['level'] || 0;
         const str = formatted['level'] || `${Math.round(val)}%`;
+        const font = config.fontFamily || 'Arial';
         
         const targetFill = Math.min(Math.max(val, 0), 100) / 100;
         
@@ -74,7 +76,7 @@ export const theme: ThemeDefinition = {
         }
 
         ctx.fillStyle = '#fff';
-        ctx.font = 'bold 120px Inter, sans-serif';
+        ctx.font = `bold 120px "${font}"`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         
@@ -82,7 +84,7 @@ export const theme: ThemeDefinition = {
         ctx.shadowBlur = 20;
         ctx.fillText(str, w/2, h/2 - 20);
 
-        ctx.font = 'bold 24px Inter, sans-serif';
+        ctx.font = `bold 24px "${font}"`;
         ctx.fillText(config.levelLabel.toUpperCase(), w/2, h/2 + 60);
         
         ctx.shadowBlur = 0;

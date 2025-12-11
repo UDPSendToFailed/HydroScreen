@@ -17,12 +17,14 @@ export const theme: ThemeDefinition = {
         { id: 'bgColor', label: 'Background', type: 'color', default: '#000000' },
         { id: 'trackWidth', label: 'Stroke Width', type: 'range', default: 30, min: 10, max: 60 },
         { id: 'mainLabel', label: 'Primary Label', type: 'text', default: '' },
-        { id: 'subLabel', label: 'Secondary Label', type: 'text', default: '' }
+        { id: 'subLabel', label: 'Secondary Label', type: 'text', default: '' },
+        { id: 'fontFamily', label: 'Font Family', type: 'font', default: 'Arial' }
     ],
     renderFn: (ctx, w, h, values, formatted, config, tick) => {
         const targetVal = values['main'] || 0;
         const mainStr = formatted['main'] || '--';
         const subStr = formatted['sub'] || '';
+        const font = config.fontFamily || 'Arial';
         
         const diff = targetVal - currentVal;
         if (Math.abs(diff) > 0.1) {
@@ -77,21 +79,21 @@ export const theme: ThemeDefinition = {
         ctx.textBaseline = 'middle';
 
         ctx.fillStyle = '#fff';
-        ctx.font = 'bold 120px Inter, sans-serif';
+        ctx.font = `bold 120px "${font}"`;
         ctx.shadowColor = 'rgba(0,0,0,0.8)';
         ctx.shadowBlur = 10;
         ctx.fillText(mainStr, cx, cy + 20);
         ctx.shadowBlur = 0;
 
-        ctx.font = 'bold 24px Inter, sans-serif';
+        ctx.font = `bold 24px "${font}"`;
         ctx.fillStyle = config.endColor; 
         ctx.fillText(config.mainLabel.toUpperCase(), cx, cy - 80);
 
         ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
-        ctx.font = '500 24px Inter, sans-serif';
+        ctx.font = `500 24px "${font}"`;
         ctx.fillText(subStr, cx, cy + 90);
 
-        ctx.font = 'bold 14px Inter, sans-serif';
+        ctx.font = `bold 14px "${font}"`;
         ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
         ctx.fillText(config.subLabel.toUpperCase(), cx, cy + 115);
     }

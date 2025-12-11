@@ -16,14 +16,17 @@ export const theme: ThemeDefinition = {
         { id: 'panY', label: 'Pan Vertical', type: 'range', default: 0, min: -240, max: 240 },
         { id: 'showText', label: 'Show Overlay', type: 'boolean', default: true },
         { id: 'overlayLabel', label: 'Overlay Text', type: 'text', default: '' },
-        { id: 'textColor', label: 'Text Color', type: 'color', default: '#ffffff' }
+        { id: 'textColor', label: 'Text Color', type: 'color', default: '#ffffff' },
+        { id: 'textFont', label: 'Font Family', type: 'font', default: 'Arial' },
+        { id: 'fontSize', label: 'Font Size', type: 'range', default: 80, min: 20, max: 200 }
     ],
-
     renderFn: async (ctx, w, h, values, formatted, config, tick, assets) => {
         const asset = assets['source'];
         const zoom = (config.zoom ?? 100) / 100;
         const panX = config.panX ?? 0;
         const panY = config.panY ?? 0;
+        const font = config.textFont || 'Arial';
+        const size = config.fontSize || 80;
         
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, w, h);
@@ -97,11 +100,11 @@ export const theme: ThemeDefinition = {
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 
-                ctx.font = 'bold 80px Inter';
-                ctx.fillText(str, w/2, h - 80);
+                ctx.font = `bold ${size}px "${font}"`;
+                ctx.fillText(str, w/2, h - size);
                 
-                ctx.font = 'bold 20px Inter';
-                ctx.fillText(label.toUpperCase(), w/2, h - 40);
+                ctx.font = `bold ${Math.max(12, size/4)}px "${font}"`;
+                ctx.fillText(label.toUpperCase(), w/2, h - (size/2));
                 
                 ctx.shadowBlur = 0;
                 ctx.shadowOffsetX = 0;

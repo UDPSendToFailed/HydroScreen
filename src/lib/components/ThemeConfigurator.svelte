@@ -4,8 +4,10 @@
     import { themeRegistry } from '$lib/stores/themeStore';
     import CanvasRenderer from '$lib/components/CanvasRenderer.svelte';
     import ConfirmationModal from '$lib/components/ConfirmationModal.svelte';
-    import { Cpu, Zap, Activity, Thermometer, Palette, Check, Image as ImageIcon, MousePointer2, Type, RotateCcw, X } from 'lucide-svelte';
+    import { Cpu, Zap, Activity, Palette, Check, Image as ImageIcon, MousePointer2, Type, RotateCcw, X, ChevronDown, Search } from 'lucide-svelte';
     import { open } from '@tauri-apps/plugin-dialog';
+    import { onMount } from 'svelte';
+    import { invoke } from '@tauri-apps/api/core';
     import { BaseDirectory, writeFile, mkdir, exists, readFile, remove } from '@tauri-apps/plugin-fs';
     import { slide } from 'svelte/transition';
     import type { Sensor, ThemeOption } from '$lib/types';
@@ -16,6 +18,23 @@
     let searchQuery = '';
     let isDragging = false;
     let showResetModal = false;
+
+    // Font Picker State
+    let openFontDropdownId: string | null = null;
+    let fontSearchQuery = '';
+    
+    let AVAILABLE_FONTS: string[] = ["Arial", "Consolas", "Inter", "Segoe UI", "Times New Roman", "Verdana"]; // Fallbacks
+
+    onMount(async () => {
+        try {
+            const sysFonts = await invoke<string[]>('get_system_fonts');
+            if (sysFonts && sysFonts.length > 0) {
+                AVAILABLE_FONTS = sysFonts;
+            }
+        } catch (e) {
+            console.error("Failed to load system fonts", e);
+        }
+    });
 
     $: activeTheme = $themeRegistry.find(t => t.id === $settings.activeThemeId);
     $: mapping = $settings.mappings[$settings.activeThemeId] || {};
@@ -54,6 +73,9 @@
             };
         }).filter(h => h.hasSensors);
     })();
+
+    // Font Filtering
+    $: filteredFonts = AVAILABLE_FONTS.filter(f => f.toLowerCase().includes(fontSearchQuery.toLowerCase()));
 
     function handleWheel(e: WheelEvent) {
         if (!supportsPanZoom || !activeTheme) return;
@@ -108,41 +130,37 @@
     }
 
     async function resetOption(opt: ThemeOption) {
-            if (!activeTheme) return;
+        if (!activeTheme) return;
 
-            if (opt.type === 'file') {
-                const oldPath = config[opt.id];
-                if (oldPath && typeof oldPath === 'string') {
-                    try {
-                        await remove(oldPath, { baseDir: BaseDirectory.AppData });
-                    } catch (e) {
-                    }
-                }
+        if (opt.type === 'file') {
+            const oldPath = config[opt.id];
+            if (oldPath && typeof oldPath === 'string') {
+                try {
+                    await remove(oldPath, { baseDir: BaseDirectory.AppData });
+                } catch (e) {}
             }
-
-            settings.updateThemeConfig(activeTheme.id, opt.id, opt.default);
         }
+
+        settings.updateThemeConfig(activeTheme.id, opt.id, opt.default);
+    }
 
     async function confirmResetAll() {
-            if (activeTheme && activeTheme.options) {
-                for (const opt of activeTheme.options) {
-                    if (opt.type === 'file') {
-                        const pathToDelete = config[opt.id];
-                        if (pathToDelete && typeof pathToDelete === 'string') {
-                            try {
-                                await remove(pathToDelete, { baseDir: BaseDirectory.AppData });
-                            } catch (e) {
-                                // Ignore errors
-                            }
-                        }
+        if (activeTheme && activeTheme.options) {
+            for (const opt of activeTheme.options) {
+                if (opt.type === 'file') {
+                    const pathToDelete = config[opt.id];
+                    if (pathToDelete && typeof pathToDelete === 'string') {
+                        try {
+                            await remove(pathToDelete, { baseDir: BaseDirectory.AppData });
+                        } catch (e) {}
                     }
                 }
-                
-                // After cleanup, reset the entire theme config
-                settings.resetThemeConfig(activeTheme.id);
             }
-            showResetModal = false;
+            
+            settings.resetThemeConfig(activeTheme.id);
         }
+        showResetModal = false;
+    }
 
     async function selectFile(optionId: string) {
         try {
@@ -153,15 +171,11 @@
             });
 
             if (typeof selectedPath === 'string') {
-
                 const oldPath = config[optionId];
-                
                 if (oldPath && typeof oldPath === 'string') {
                     try {
                         await remove(oldPath, { baseDir: BaseDirectory.AppData });
-                        console.log(`Cleaned up old image: ${oldPath}`);
-                    } catch (e) {
-                    }
+                    } catch (e) {}
                 }
 
                 const hasDir = await exists('images', { baseDir: BaseDirectory.AppData });
@@ -182,14 +196,35 @@
     }
 
     function toggleHw(id: string) { expandedHwId = expandedHwId === id ? null : id; }
+
+    function toggleFontDropdown(id: string) {
+        if (openFontDropdownId === id) {
+            openFontDropdownId = null;
+        } else {
+            openFontDropdownId = id;
+            fontSearchQuery = '';
+        }
+    }
+
+    function selectFont(id: string, font: string) {
+        updateConfig(id, font);
+        openFontDropdownId = null;
+    }
+
+    // Close dropdowns on click outside
+    function handleClickOutside(event: MouseEvent) {
+        if (openFontDropdownId && !(event.target as Element).closest('.font-dropdown-container')) {
+            openFontDropdownId = null;
+        }
+    }
 </script>
 
-<svelte:window on:mouseup={handleMouseUp} />
+<svelte:window on:mouseup={handleMouseUp} on:click={handleClickOutside} />
 
 {#if showResetModal}
     <ConfirmationModal 
         title="Reset Theme?"
-        message="This will revert all colors and settings for this theme to their defaults. Data mappings will be kept."
+        message="This will revert all colors, fonts, and files for this theme to their defaults. Data mappings will be kept."
         confirmText="Reset All"
         on:cancel={() => showResetModal = false}
         on:confirm={confirmResetAll}
@@ -197,6 +232,7 @@
 {/if}
 
 <div class="flex h-full w-full overflow-hidden">
+    <!-- Left: Preview Canvas -->
     <div class="flex-1 flex flex-col min-w-0 bg-gradient-to-br from-zinc-900 to-black relative">
         <div class="h-16 flex items-center justify-between px-6 border-b border-white/5 bg-white/5 backdrop-blur-sm z-10 shrink-0">
             <div class="min-w-0">
@@ -243,6 +279,7 @@
         </div>
     </div>
 
+    <!-- Right: Controls -->
     <div class="w-[320px] md:w-[400px] border-l border-white/5 bg-zinc-900/80 backdrop-blur-xl flex flex-col shadow-2xl z-20 shrink-0">
         {#if activeTab === 'data'}
             <div class="flex-1 flex flex-col min-h-0 animate-in slide-in-from-right-4 duration-300">
@@ -379,7 +416,56 @@
                                         <div class="relative flex-1">
                                             <input type="text" id={opt.id} value={config[opt.id] ? config[opt.id].split(/[\\/]/).pop() : 'No file'} class="w-full h-10 bg-black/20 border border-white/10 rounded-lg px-3 text-sm font-mono text-zinc-500 truncate" readonly/>
                                         </div>
+                                        {#if config[opt.id]}
+                                            <button on:click={() => updateConfig(opt.id, null)} class="h-10 w-10 flex items-center justify-center bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition-colors border border-red-500/20" title="Clear File">
+                                                <X size={16} />
+                                            </button>
+                                        {/if}
                                         <button on:click={() => selectFile(opt.id)} class="h-10 px-4 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 rounded-lg transition-colors flex items-center gap-2"><ImageIcon size={16} /><span class="text-xs font-bold">BROWSE</span></button>
+                                    </div>
+                                {:else if opt.type === 'font'}
+                                    <div class="relative font-dropdown-container">
+                                        <button 
+                                            class="w-full h-10 bg-black/20 border border-white/10 rounded-lg px-3 flex items-center justify-between hover:bg-white/5 transition-colors"
+                                            on:click={() => toggleFontDropdown(opt.id)}
+                                        >
+                                            <span class="text-sm text-zinc-200" style="font-family: {config[opt.id] ?? opt.default}">{config[opt.id] ?? opt.default}</span>
+                                            <ChevronDown size={14} class="text-zinc-500" />
+                                        </button>
+
+                                        {#if openFontDropdownId === opt.id}
+                                            <div 
+                                                class="absolute top-full left-0 right-0 mt-1 bg-zinc-900 border border-white/10 rounded-lg shadow-xl z-50 overflow-hidden max-h-60 flex flex-col"
+                                                transition:slide={{ duration: 200 }}
+                                            >
+                                                <div class="p-2 border-b border-white/5 sticky top-0 bg-zinc-900 z-10">
+                                                    <div class="relative">
+                                                        <Search size={14} class="absolute left-2.5 top-2.5 text-zinc-500"/>
+                                                        <input 
+                                                            type="text" 
+                                                            bind:value={fontSearchQuery} 
+                                                            placeholder="Search fonts..." 
+                                                            class="w-full bg-black/40 border border-white/5 rounded-md pl-8 pr-2 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500/50"
+                                                            on:click|stopPropagation
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <div class="overflow-y-auto flex-1 p-1">
+                                                    {#each filteredFonts as font}
+                                                        <button 
+                                                            class="w-full text-left px-3 py-2 text-sm hover:bg-white/10 rounded-md transition-colors {config[opt.id] === font ? 'text-indigo-400 bg-indigo-500/10' : 'text-zinc-300'}"
+                                                            style="font-family: {font}"
+                                                            on:click={() => selectFont(opt.id, font)}
+                                                        >
+                                                            {font}
+                                                        </button>
+                                                    {/each}
+                                                    {#if filteredFonts.length === 0}
+                                                        <div class="px-3 py-2 text-xs text-zinc-500 text-center">No fonts found</div>
+                                                    {/if}
+                                                </div>
+                                            </div>
+                                        {/if}
                                     </div>
                                 {/if}
                             </div>
