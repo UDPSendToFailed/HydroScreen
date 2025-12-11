@@ -11,10 +11,20 @@
     function handleKeydown(e: KeyboardEvent) {
         if (e.key === 'Escape' || e.key === 'Enter') dispatch('close');
     }
+
+    function portal(node: HTMLElement) {
+        document.body.appendChild(node);
+        return {
+            destroy() {
+                if (node.parentNode) node.parentNode.removeChild(node);
+            }
+        };
+    }
 </script>
 
 <div 
-    class="absolute inset-0 z-[70] bg-black/70 backdrop-blur-sm flex items-center justify-center p-8 outline-none"
+    use:portal
+    class="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-center justify-center p-8 outline-none"
     transition:fade={{ duration: 150 }}
     on:click|self={() => dispatch('close')}
     on:keydown={handleKeydown}
@@ -31,7 +41,7 @@
         </div>
         
         <h3 class="text-lg font-bold text-white mb-2">{title}</h3>
-        <p class="text-sm text-zinc-400 mb-6 leading-relaxed font-mono bg-black/20 p-3 rounded-lg border border-white/5 break-words">
+        <p class="text-sm text-zinc-400 mb-6 leading-relaxed font-mono bg-black/20 p-3 rounded-lg border border-white/5 break-words text-left">
             {message}
         </p>
 
