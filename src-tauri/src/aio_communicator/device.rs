@@ -48,7 +48,11 @@ impl CorsairH150i {
                 packet.resize(max_len, 0x00);
             }
 
-            self.device.write(&packet)?;
+            let written = self.device.write(&packet)?;
+            if written != packet.len() {
+                return Err(anyhow!("Incomplete write: {}/{}", written, packet.len()));
+            }
+
             part_num += 1;
         }
 
