@@ -4,6 +4,7 @@ pub const SUPPORTED_PIDS: &[u16] = &[
     0x0c39, // Elite LCD Cap
     0x0c33, // Elite LCD Upgrade Kit
     0x0c4e, // iCUE LINK AIO LCD
+    0x0c42, // XC7 RGB ELITE LCD
 ];
 
 pub const IMG_TX: u8 = 0x02;
