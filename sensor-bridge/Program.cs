@@ -18,6 +18,7 @@ using CorsairLink.Devices.HydroPlatinum;
 using CorsairLink.Hid;
 using CorsairLink.Synchronization;
 using System.Security.Principal;
+using System.Runtime.InteropServices;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
@@ -29,9 +30,17 @@ namespace SensorBridge
     {
         internal const int APP_PORT = 14242;
         internal const int BRIDGE_PORT = 14243;
+        private const uint SEM_FAILCRITICALERRORS = 0x0001;
+        private const uint SEM_NOGPFAULTERRORBOX = 0x0002;
+
+        [DllImport("kernel32.dll")]
+        private static extern uint SetErrorMode(uint uMode);
 
         static void Main(string[] args)
         {
+            // Suppress Windows HardError/WER modal popups (e.g. NVAPI 0xc0000005 during GPU driver swaps)
+            SetErrorMode(SetErrorMode(0) | SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
+
             Directory.SetCurrentDirectory(AppDomain.CurrentDomain.BaseDirectory);
 
             bool isService = args.Any(arg => arg.Equals("--service", StringComparison.OrdinalIgnoreCase));
