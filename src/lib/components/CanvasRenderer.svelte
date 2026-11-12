@@ -2,13 +2,13 @@
     import { onMount, onDestroy } from "svelte";
     import { invoke } from "@tauri-apps/api/core";
     import { readFile, BaseDirectory } from "@tauri-apps/plugin-fs";
-    import { rawHardware, lastUpdate, CONNECTION_TIMEOUT, isSensorless } from "$lib/stores/sensors";
-    import { settings } from "$lib/stores/settings";
-    import { themeRegistry } from "$lib/stores/themeStore";
-    import { formatUnit } from "$lib/utils";
-    import { loadGif, type GifData } from "$lib/gif_utils";
-    import { WifiOff, Loader2 } from "lucide-svelte";
-    import { isDoomModalOpen } from "$lib/stores/doomStore";
+    import { rawHardware, lastUpdate, CONNECTION_TIMEOUT, isSensorless } from "#lib/stores/sensors.ts";
+    import { settings } from "#lib/stores/settings.ts";
+    import { themeRegistry } from "#lib/stores/themeStore.ts";
+    import { formatUnit } from "#lib/utils.ts";
+    import { loadGif, type GifData } from "#lib/gif_utils.ts";
+    import { WifiOff, Loader2 } from "@lucide/svelte";
+    import { isDoomModalOpen } from "#lib/stores/doomStore.ts";
 
     let canvas: HTMLCanvasElement;
     let ctx: CanvasRenderingContext2D;

@@ -1,7 +1,7 @@
 <script lang="ts">
     import { createEventDispatcher } from "svelte";
     import { fade, scale } from "svelte/transition";
-    import { AlertTriangle } from "lucide-svelte";
+    import { AlertTriangle } from "@lucide/svelte";
 
     export let title = "Confirm Action";
     export let message = "Are you sure you want to proceed?";

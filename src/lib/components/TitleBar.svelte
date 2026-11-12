@@ -1,8 +1,8 @@
 <script lang="ts">
     import { getCurrentWindow } from "@tauri-apps/api/window";
     import { exit } from "@tauri-apps/plugin-process";
-    import { settings } from "$lib/stores/settings";
-    import { Minus, Square, X, RefreshCw } from "lucide-svelte";
+    import { settings } from "#lib/stores/settings.ts";
+    import { Minus, Square, X, RefreshCw } from "@lucide/svelte";
     import { get } from "svelte/store";
 
     export let lhmStatus: "active" | "waiting" | "sensorless";

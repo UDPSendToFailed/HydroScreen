@@ -1,4 +1,4 @@
-import type { ThemeDefinition } from '$lib/types';
+import type { ThemeDefinition } from '#lib/types.ts';
 import { fitText } from '../../utils';
 
 export const theme: ThemeDefinition = {

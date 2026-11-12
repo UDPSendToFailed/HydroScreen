@@ -1,9 +1,9 @@
 <script lang="ts">
     import { onMount, onDestroy } from "svelte";
     import { invoke } from "@tauri-apps/api/core";
-    import { isDoomModalOpen } from "$lib/stores/doomStore";
+    import { isDoomModalOpen } from "#lib/stores/doomStore.ts";
     import { DOOM } from "wasm-doom";
-    import { X, Gamepad2 } from "lucide-svelte";
+    import { X, Gamepad2 } from "@lucide/svelte";
 
     let doomCanvas: HTMLCanvasElement;
     let doomCtx: CanvasRenderingContext2D;

@@ -1,9 +1,9 @@
 <script lang="ts">
     import { createEventDispatcher, onMount } from "svelte";
     import { fade, scale } from "svelte/transition";
-    import { settings } from "$lib/stores/settings";
+    import { settings } from "#lib/stores/settings.ts";
     import { getVersion } from "@tauri-apps/api/app";
-    import { X, Power, ArrowDownToLine, Monitor, EyeOff, Sun, RotateCw } from "lucide-svelte";
+    import { X, Power, ArrowDownToLine, Monitor, EyeOff, Sun, RotateCw } from "@lucide/svelte";
 
     const dispatch = createEventDispatcher();
     let version = "";

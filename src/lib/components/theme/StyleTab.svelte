@@ -1,6 +1,6 @@
 <script lang="ts">
-    import { settings } from "$lib/stores/settings";
-    import { rawHardware } from "$lib/stores/sensors";
+    import { settings } from "#lib/stores/settings.ts";
+    import { rawHardware } from "#lib/stores/sensors.ts";
     import {
         Type,
         RotateCcw,
@@ -8,7 +8,7 @@
         ImageIcon,
         ChevronDown,
         Search,
-    } from "lucide-svelte";
+    } from "@lucide/svelte";
     import { open } from "@tauri-apps/plugin-dialog";
     import { onMount, createEventDispatcher } from "svelte";
     import { invoke } from "@tauri-apps/api/core";
@@ -21,8 +21,8 @@
         remove,
     } from "@tauri-apps/plugin-fs";
     import { slide } from "svelte/transition";
-    import type { ThemeDefinition, ThemeOption } from "$lib/types";
-    import { getDefaultRange } from "$lib/utils";
+    import type { ThemeDefinition, ThemeOption } from "#lib/types.ts";
+    import { getDefaultRange } from "#lib/utils.ts";
 
     export let activeTheme: ThemeDefinition | undefined;
 

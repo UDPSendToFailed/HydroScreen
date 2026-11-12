@@ -3,8 +3,8 @@
     import { listen } from "@tauri-apps/api/event";
     import { onMount, onDestroy } from "svelte";
     import { fade, scale } from "svelte/transition";
-    import { ShieldAlert, X } from "lucide-svelte";
-    import { isSensorless } from "$lib/stores/sensors";
+    import { ShieldAlert, X } from "@lucide/svelte";
+    import { isSensorless } from "#lib/stores/sensors.ts";
 
     let showDialog = false;
     let errorMessage = "";

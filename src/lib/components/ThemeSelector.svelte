@@ -1,11 +1,11 @@
 <script lang="ts">
     import { createEventDispatcher, onMount } from "svelte";
-    import { settings } from "$lib/stores/settings";
+    import { settings } from "#lib/stores/settings.ts";
     import {
         themeRegistry,
         refreshThemes,
         validateTheme,
-    } from "$lib/stores/themeStore";
+    } from "#lib/stores/themeStore.ts";
     import {
         LayoutTemplate,
         CheckCircle2,
@@ -13,7 +13,7 @@
         Plus,
         Trash2,
         Loader2,
-    } from "lucide-svelte";
+    } from "@lucide/svelte";
     import { open } from "@tauri-apps/plugin-dialog";
     import {
         readTextFile,
@@ -21,11 +21,11 @@
         remove,
         BaseDirectory,
     } from "@tauri-apps/plugin-fs";
-    import ConfirmationModal from "$lib/components/ConfirmationModal.svelte";
-    import ErrorModal from "$lib/components/ErrorModal.svelte";
+    import ConfirmationModal from "#lib/components/ConfirmationModal.svelte";
+    import ErrorModal from "#lib/components/ErrorModal.svelte";
     import { get } from "svelte/store";
 
-    import { isDoomModalOpen } from "$lib/stores/doomStore";
+    import { isDoomModalOpen } from "#lib/stores/doomStore.ts";
 
     const dispatch = createEventDispatcher();
 

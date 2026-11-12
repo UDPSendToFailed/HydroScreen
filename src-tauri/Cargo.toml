@@ -1,6 +1,6 @@
 [package]
 name = "hydro-screen"
-version = "1.4.1"
+version = "1.5.0"
 description = "Corsair LCD screen controller"
 authors = ["UDPSendToFailed"]
 edition = "2024"

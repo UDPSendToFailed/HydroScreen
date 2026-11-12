@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import { sveltekit } from "@sveltejs/kit/vite";
+import adapter from "@sveltejs/adapter-static";
 import tailwindcss from "@tailwindcss/vite";
 
 // @ts-expect-error process is a nodejs global
@@ -9,7 +10,11 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
   plugins: [
     tailwindcss(), // <--- NEW: Oxide Engine
-    sveltekit()
+    sveltekit({
+      adapter: adapter({
+        fallback: "index.html",
+      }),
+    }),
   ],
 
   // Tauri settings

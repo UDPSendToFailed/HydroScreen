@@ -1,4 +1,4 @@
-import type { ThemeDefinition } from '$lib/types';
+import type { ThemeDefinition } from '#lib/types.ts';
 import { fitText } from '../../utils';
 
 // Animation state — reset via tick (tick resets on theme switch via TICK_MODULO)

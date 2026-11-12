@@ -1,6 +1,6 @@
 import { writable, get } from 'svelte/store';
 import { listen } from '@tauri-apps/api/event';
-import type { Hardware } from '$lib/types';
+import type { Hardware } from '#lib/types.ts';
 
 // The raw list of hardware from LibreHardwareMonitor
 export const rawHardware = writable<Hardware[]>([]);

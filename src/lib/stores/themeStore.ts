@@ -1,12 +1,12 @@
 import { writable } from 'svelte/store';
 import { readDir, readTextFile, BaseDirectory, mkdir, exists } from '@tauri-apps/plugin-fs';
-import type { ThemeDefinition } from '$lib/types';
+import type { ThemeDefinition } from '#lib/types.ts';
 
-import { theme as CustomMedia } from '$lib/themes/library/custom_media';
-import { theme as HydroGauge } from '$lib/themes/library/hydro_gauge';
-import { theme as TerminalZero } from '$lib/themes/library/terminal_zero';
-import { theme as Quantum } from '$lib/themes/library/quantum';
-import { theme as LiquidFlow } from '$lib/themes/library/liquid_flow';
+import { theme as CustomMedia } from '#lib/themes/library/custom_media.ts';
+import { theme as HydroGauge } from '#lib/themes/library/hydro_gauge.ts';
+import { theme as TerminalZero } from '#lib/themes/library/terminal_zero.ts';
+import { theme as Quantum } from '#lib/themes/library/quantum.ts';
+import { theme as LiquidFlow } from '#lib/themes/library/liquid_flow.ts';
 
 const BUILT_INS: ThemeDefinition[] = [
     CustomMedia,

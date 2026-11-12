@@ -1,15 +1,15 @@
 <script lang="ts">
     import { onMount } from 'svelte';
     import { getCurrentWindow } from '@tauri-apps/api/window';
-    import { settings, settingsReady } from '$lib/stores/settings';
-    import { initSensorListener, isConnected, isSensorless } from '$lib/stores/sensors';
-    import TitleBar from '$lib/components/TitleBar.svelte';
-    import ThemeSelector from '$lib/components/ThemeSelector.svelte';
-    import ThemeConfigurator from '$lib/components/ThemeConfigurator.svelte';
-    import SettingsModal from '$lib/components/SettingsModal.svelte';
-    import DoomModal from '$lib/components/DoomModal.svelte';
-    import { isDoomModalOpen } from '$lib/stores/doomStore';
-    import { Loader2 } from 'lucide-svelte';
+    import { settings, settingsReady } from '#lib/stores/settings.ts';
+    import { initSensorListener, isConnected, isSensorless } from '#lib/stores/sensors.ts';
+    import TitleBar from '#lib/components/TitleBar.svelte';
+    import ThemeSelector from '#lib/components/ThemeSelector.svelte';
+    import ThemeConfigurator from '#lib/components/ThemeConfigurator.svelte';
+    import SettingsModal from '#lib/components/SettingsModal.svelte';
+    import DoomModal from '#lib/components/DoomModal.svelte';
+    import { isDoomModalOpen } from '#lib/stores/doomStore.ts';
+    import { Loader2 } from '@lucide/svelte';
 
     let showSettings = false;
 

@@ -1,10 +1,10 @@
 <script lang="ts">
-    import { settings } from "$lib/stores/settings";
-    import { rawHardware } from "$lib/stores/sensors";
-    import { Cpu, Zap, Check, X } from "lucide-svelte";
+    import { settings } from "#lib/stores/settings.ts";
+    import { rawHardware } from "#lib/stores/sensors.ts";
+    import { Cpu, Zap, Check, X } from "@lucide/svelte";
     import { slide } from "svelte/transition";
-    import type { Sensor, ThemeDefinition } from "$lib/types";
-    import { getDefaultRange } from "$lib/utils";
+    import type { Sensor, ThemeDefinition } from "#lib/types.ts";
+    import { getDefaultRange } from "#lib/utils.ts";
 
     export let activeTheme: ThemeDefinition | undefined;
 

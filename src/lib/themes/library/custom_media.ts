@@ -1,5 +1,5 @@
-import type { ThemeDefinition } from '$lib/types';
-import type { GifData } from '$lib/gif_utils';
+import type { ThemeDefinition } from '#lib/types.ts';
+import type { GifData } from '#lib/gif_utils.ts';
 import { fitText } from '../../utils';
 
 export const theme: ThemeDefinition = {

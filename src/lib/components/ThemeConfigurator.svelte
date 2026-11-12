@@ -1,20 +1,20 @@
 <script lang="ts">
-    import { settings } from "$lib/stores/settings";
-    import { themeRegistry } from "$lib/stores/themeStore";
-    import CanvasRenderer from "$lib/components/CanvasRenderer.svelte";
-    import ConfirmationModal from "$lib/components/ConfirmationModal.svelte";
-    import DataTab from "$lib/components/theme/DataTab.svelte";
-    import StyleTab from "$lib/components/theme/StyleTab.svelte";
+    import { settings } from "#lib/stores/settings.ts";
+    import { themeRegistry } from "#lib/stores/themeStore.ts";
+    import CanvasRenderer from "#lib/components/CanvasRenderer.svelte";
+    import ConfirmationModal from "#lib/components/ConfirmationModal.svelte";
+    import DataTab from "#lib/components/theme/DataTab.svelte";
+    import StyleTab from "#lib/components/theme/StyleTab.svelte";
     import {
         Activity,
         Palette,
         MousePointer2,
         RotateCcw,
         X,
-    } from "lucide-svelte";
+    } from "@lucide/svelte";
     import { BaseDirectory, remove } from "@tauri-apps/plugin-fs";
     import { slide } from "svelte/transition";
-    import type { ThemeOption } from "$lib/types";
+    import type { ThemeOption } from "#lib/types.ts";
 
     let activeTab: "data" | "style" = "data";
     let isDragging = false;

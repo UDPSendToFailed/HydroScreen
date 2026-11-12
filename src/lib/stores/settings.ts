@@ -1,7 +1,7 @@
 import { writable, get } from 'svelte/store';
 import { load } from '@tauri-apps/plugin-store';
 import { BaseDirectory, writeTextFile, mkdir, exists } from '@tauri-apps/plugin-fs';
-import type { SensorMapping } from '$lib/types';
+import type { SensorMapping } from '#lib/types.ts';
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart';
 import { refreshThemes } from './themeStore';
 import { invoke } from '@tauri-apps/api/core';

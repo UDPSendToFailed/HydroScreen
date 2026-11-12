@@ -1,7 +1,7 @@
 <script lang="ts">
     import { createEventDispatcher } from "svelte";
     import { fade, scale } from "svelte/transition";
-    import { Ban } from "lucide-svelte";
+    import { Ban } from "@lucide/svelte";
 
     export let title = "Import Failed";
     export let message = "An unknown error occurred.";
