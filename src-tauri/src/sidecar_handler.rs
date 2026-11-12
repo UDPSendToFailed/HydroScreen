@@ -45,7 +45,7 @@ fn parse_sc_query_state(exit_success: bool, stdout: &str) -> BridgeServiceState 
 
 fn query_bridge_service_state() -> BridgeServiceState {
     match Command::new("sc.exe")
-        .args(&["query", BRIDGE_SERVICE_NAME])
+        .args(["query", BRIDGE_SERVICE_NAME])
         .creation_flags(CREATE_NO_WINDOW)
         .output()
     {
@@ -160,7 +160,7 @@ pub fn spawn_sensor_bridge(app: AppHandle, debug_mode: bool) {
 
             // First check if already running
             let output = Command::new("tasklist")
-                .args(&["/FI", &format!("IMAGENAME eq {}", final_binary_name), "/NH"])
+                .args(["/FI", &format!("IMAGENAME eq {}", final_binary_name), "/NH"])
                 .creation_flags(CREATE_NO_WINDOW)
                 .output();
 
@@ -198,7 +198,7 @@ pub fn spawn_sensor_bridge(app: AppHandle, debug_mode: bool) {
             };
 
             let status = Command::new("powershell")
-                .args(&["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps_script])
+                .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &ps_script])
                 .creation_flags(CREATE_NO_WINDOW)
                 .status();
 
@@ -252,10 +252,10 @@ pub fn spawn_sensor_bridge(app: AppHandle, debug_mode: bool) {
         let mut buf = [0u8; 65535];
 
         loop {
-            if let Ok((amt, _)) = socket.recv_from(&mut buf) {
-                if let Ok(json_str) = std::str::from_utf8(&buf[..amt]) {
-                    let _ = app_clone.emit("sensors-update", json_str);
-                }
+            if let Ok((amt, _)) = socket.recv_from(&mut buf)
+                && let Ok(json_str) = std::str::from_utf8(&buf[..amt])
+            {
+                let _ = app_clone.emit("sensors-update", json_str);
             }
         }
     });

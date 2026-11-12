@@ -86,11 +86,11 @@ pub fn run_aio_loop(rx: Receiver<AioMessage>) {
                     }
 
                     // Then process the latest frame if there is one
-                    if let Some(frame) = latest_frame {
-                        if let Err(e) = device.send_image(&frame) {
-                            error!("[RUST] Write error (Dropping connection): {}", e);
-                            device_opt = None;
-                        }
+                    if let Some(frame) = latest_frame
+                        && let Err(e) = device.send_image(&frame)
+                    {
+                        error!("[RUST] Write error (Dropping connection): {}", e);
+                        device_opt = None;
                     }
                 }
             }
