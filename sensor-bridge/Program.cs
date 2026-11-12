@@ -1,4 +1,5 @@
-﻿using System;
+using System;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -17,106 +18,244 @@ using CorsairLink.Devices.HydroPlatinum;
 using CorsairLink.Hid;
 using CorsairLink.Synchronization;
 using System.Security.Principal;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace SensorBridge
 {
+    public sealed record BridgeConfig(bool DebugMode, bool IsService);
+
     class Program
     {
-        static int APP_PORT = 14242;
-        static int BRIDGE_PORT = 14243;
-        static DateTime lastHeartbeat = DateTime.Now;
-        static List<IDevice> corsairDevices = new List<IDevice>();
-        static IDeviceGuardManager guardManager = null!;
-        static ILogger logger = null!;
+        internal const int APP_PORT = 14242;
+        internal const int BRIDGE_PORT = 14243;
 
         static void Main(string[] args)
         {
-            System.IO.Directory.SetCurrentDirectory(System.AppDomain.CurrentDomain.BaseDirectory);
+            Directory.SetCurrentDirectory(AppDomain.CurrentDomain.BaseDirectory);
 
-            Console.OutputEncoding = Encoding.UTF8;
+            bool isService = args.Any(arg => arg.Equals("--service", StringComparison.OrdinalIgnoreCase));
             bool debugMode = args.Any(arg => arg.Equals("--debug", StringComparison.OrdinalIgnoreCase) || arg.Equals("-d", StringComparison.OrdinalIgnoreCase));
-            logger = new FileLogger(debugMode);
-            guardManager = new CorsairDevicesGuardManager();
+
+            if (!isService)
+            {
+                try { Console.OutputEncoding = Encoding.UTF8; } catch { }
+            }
+
+            var logger = new FileLogger(debugMode, isService);
 
             if (!IsAdministrator())
             {
                 logger.Error("Startup", "NOT running as Administrator. Exiting immediately.");
-                SendErrorAndExit("Administrator Access Required", 5); // Access Denied
+                SendError("Administrator Access Required");
+                if (!isService) Environment.Exit(5);
                 return;
             }
 
-            logger.Info("Startup", "Running with Administrator privileges.");
+            logger.Info("Startup", $"Running with Administrator privileges (ServiceMode: {isService}).");
 
-            // 1. UDP Heartbeat Watchdog
-            Task.Run(async () =>
+            var config = new BridgeConfig(debugMode, isService);
+
+            if (isService)
             {
-                var localEp = new IPEndPoint(IPAddress.Loopback, BRIDGE_PORT);
-                using (var client = new UdpClient(localEp))
-                {
-                    while (true)
+                Host.CreateDefaultBuilder(args)
+                    .UseWindowsService(options =>
                     {
-                        try
+                        options.ServiceName = "HydroScreenSensorBridge";
+                    })
+                    .ConfigureServices(services =>
+                    {
+                        services.AddSingleton(config);
+                        services.AddSingleton<ILogger>(logger);
+                        services.AddHostedService<SensorBridgeWorker>();
+                    })
+                    .Build()
+                    .Run();
+            }
+            else
+            {
+                using var cts = new CancellationTokenSource();
+                Console.CancelKeyPress += (_, e) =>
+                {
+                    e.Cancel = true;
+                    cts.Cancel();
+                };
+
+                var worker = new SensorBridgeWorker(config, logger);
+                worker.RunBridgeAsync(cts.Token).GetAwaiter().GetResult();
+            }
+        }
+
+        internal static void SendError(string errorMsg)
+        {
+            try
+            {
+                using (var sender = new UdpClient())
+                {
+                    string json = $"{{\"error\": \"{errorMsg}\"}}";
+                    byte[] bytes = Encoding.UTF8.GetBytes(json);
+                    sender.Send(bytes, bytes.Length, new IPEndPoint(IPAddress.Loopback, APP_PORT));
+                }
+                Thread.Sleep(500);
+            }
+            catch { }
+        }
+
+        static bool IsAdministrator()
+        {
+            using (WindowsIdentity identity = WindowsIdentity.GetCurrent())
+            {
+                WindowsPrincipal principal = new WindowsPrincipal(identity);
+                return principal.IsInRole(WindowsBuiltInRole.Administrator);
+            }
+        }
+    }
+
+    public sealed class SensorBridgeWorker : BackgroundService
+    {
+        private readonly BridgeConfig _config;
+        private readonly ILogger _logger;
+        private readonly IDeviceGuardManager _guardManager = new CorsairDevicesGuardManager();
+        private readonly List<IDevice> _corsairDevices = new();
+
+        public SensorBridgeWorker(BridgeConfig config, ILogger logger)
+        {
+            _config = config;
+            _logger = logger;
+        }
+
+        protected override Task ExecuteAsync(CancellationToken stoppingToken)
+        {
+            return RunBridgeAsync(stoppingToken);
+        }
+
+        public async Task RunBridgeAsync(CancellationToken stoppingToken)
+        {
+            long lastHeartbeatTicks = Stopwatch.GetTimestamp();
+            using var wakeSignal = new SemaphoreSlim(0, 1);
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+            var ct = linkedCts.Token;
+
+            // 1. UDP Heartbeat Listener
+            var heartbeatTask = Task.Run(async () =>
+            {
+                var localEp = new IPEndPoint(IPAddress.Loopback, Program.BRIDGE_PORT);
+                using var client = new UdpClient(localEp);
+                while (!ct.IsCancellationRequested)
+                {
+                    try
+                    {
+                        var result = await client.ReceiveAsync(ct);
+                        string msg = Encoding.UTF8.GetString(result.Buffer);
+                        if (msg.Trim() == "ping")
                         {
-                            var result = await client.ReceiveAsync();
-                            string msg = Encoding.UTF8.GetString(result.Buffer);
-                            if (msg.Trim() == "ping") lastHeartbeat = DateTime.Now;
+                            Interlocked.Exchange(ref lastHeartbeatTicks, Stopwatch.GetTimestamp());
+                            if (wakeSignal.CurrentCount == 0)
+                            {
+                                try { wakeSignal.Release(); } catch (SemaphoreFullException) { }
+                            }
                         }
-                        catch { }
                     }
-                }
-            });
-
-            // Self-termination watchdog.
-            Task.Run(async () =>
-            {
-                await Task.Delay(10000);
-                while (true)
-                {
-                    if ((DateTime.Now - lastHeartbeat).TotalSeconds > 5)
+                    catch (OperationCanceledException)
                     {
-                        Environment.Exit(0);
+                        break;
                     }
-                    await Task.Delay(1000);
+                    catch { }
                 }
-            });
+            }, CancellationToken.None);
+
+            // Self-termination watchdog (standalone/console mode only)
+            Task? watchdogTask = null;
+            if (!_config.IsService)
+            {
+                watchdogTask = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await Task.Delay(10000, ct);
+                        while (!ct.IsCancellationRequested)
+                        {
+                            double elapsed = Stopwatch.GetElapsedTime(Interlocked.Read(ref lastHeartbeatTicks)).TotalSeconds;
+                            if (elapsed > 5.0)
+                            {
+                                _logger.Info("Watchdog", "No heartbeat for >5s in standalone mode. Shutting down.");
+                                linkedCts.Cancel();
+                                break;
+                            }
+                            await Task.Delay(1000, ct);
+                        }
+                    }
+                    catch (OperationCanceledException) { }
+                }, CancellationToken.None);
+            }
 
             Computer? computer = null;
 
-            // Attempt to load the driver.
             try
             {
-                computer = new Computer
+                try
                 {
-                    IsCpuEnabled = true,
-                    IsGpuEnabled = true,
-                    IsMotherboardEnabled = true,
-                    IsStorageEnabled = false,
-                    IsControllerEnabled = true,
-                    IsMemoryEnabled = true,
-                    IsPsuEnabled = true
-                };
+                    computer = new Computer
+                    {
+                        IsCpuEnabled = true,
+                        IsGpuEnabled = true,
+                        IsMotherboardEnabled = true,
+                        IsStorageEnabled = false,
+                        IsControllerEnabled = true,
+                        IsMemoryEnabled = true,
+                        IsPsuEnabled = true
+                    };
 
-                logger.Info("Startup", "Attempting to load LibreHardwareMonitor driver...");
-                computer.Open();
-                logger.Info("Startup", "LibreHardwareMonitor driver loaded successfully.");
-            }
-            catch (Exception ex)
-            {
-                logger.Error("Startup", "Failed to load LibreHardwareMonitor driver!", ex);
-                SendErrorAndExit($"Driver Load Failed: {ex.Message}", 2); // File Not Found / Driver Error
-                return;
-            }
-
-            // Initialize Corsair Devices.
-            InitializeCorsairDevices();
-
-            // 2. Main Loop (UDP Sender)
-            using (var sender = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0)))
-            {
-                var endPoint = new IPEndPoint(IPAddress.Loopback, APP_PORT);
-
-                while (true)
+                    _logger.Info("Startup", "Attempting to load LibreHardwareMonitor driver...");
+                    computer.Open();
+                    _logger.Info("Startup", "LibreHardwareMonitor driver loaded successfully.");
+                }
+                catch (Exception ex)
                 {
+                    _logger.Error("Startup", "Failed to load LibreHardwareMonitor driver!", ex);
+                    Program.SendError($"Driver Load Failed: {ex.Message}");
+                    if (!_config.IsService) Environment.ExitCode = 2;
+                    return;
+                }
+
+                InitializeCorsairDevices();
+
+                // 2. Main Loop (UDP Sender)
+                using var sender = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
+                var endPoint = new IPEndPoint(IPAddress.Loopback, Program.APP_PORT);
+                bool wasIdle = false;
+
+                while (!ct.IsCancellationRequested)
+                {
+                    if (_config.IsService)
+                    {
+                        double elapsed = Stopwatch.GetElapsedTime(Interlocked.Read(ref lastHeartbeatTicks)).TotalSeconds;
+                        if (elapsed > 10.0)
+                        {
+                            if (!wasIdle)
+                            {
+                                _logger.Info("MainLoop", "No heartbeat for >10s; entering idle mode.");
+                                wasIdle = true;
+                            }
+
+                            try
+                            {
+                                await wakeSignal.WaitAsync(TimeSpan.FromSeconds(5), ct);
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                break;
+                            }
+                            continue;
+                        }
+
+                        if (wasIdle)
+                        {
+                            _logger.Info("MainLoop", "Heartbeat received; resuming sensor polling.");
+                            wasIdle = false;
+                        }
+                    }
+
                     try
                     {
                         var hardwareList = new List<JsonHardware>();
@@ -124,8 +263,7 @@ namespace SensorBridge
                         if (computer != null)
                         {
                             foreach (var hardware in computer.Hardware) hardware.Update();
-                        
-                            // 1. Get LHM Data.
+
                             hardwareList.AddRange(computer.Hardware.Select(h => new JsonHardware
                             {
                                 Id = h.Identifier.ToString(),
@@ -141,68 +279,66 @@ namespace SensorBridge
                             }));
                         }
 
-                        // 2. Refresh & Get Corsair Data.
-                        foreach (var device in corsairDevices)
+                        foreach (var device in _corsairDevices)
+                        {
+                            try
                             {
-                                try
+                                device.Refresh();
+
+                                var sensors = new List<JsonSensor>();
+
+                                _logger.Debug("MainLoop", $"{device.Name}: Found {device.TemperatureSensors.Count} temp sensors, {device.SpeedSensors.Count} speed sensors");
+
+                                foreach (var temp in device.TemperatureSensors)
                                 {
-                                    device.Refresh(); 
-                                    
-                                    var sensors = new List<JsonSensor>();
-                                    
-                                    logger.Debug("MainLoop", $"{device.Name}: Found {device.TemperatureSensors.Count} temp sensors, {device.SpeedSensors.Count} speed sensors");
-
-                                    foreach(var temp in device.TemperatureSensors)
+                                    if (temp.TemperatureCelsius.HasValue)
                                     {
-                                        if (temp.TemperatureCelsius.HasValue)
+                                        _logger.Debug("MainLoop", $"Adding Temp: {temp.Name} = {temp.TemperatureCelsius.Value}");
+                                        sensors.Add(new JsonSensor
                                         {
-                                            logger.Debug("MainLoop", $"Adding Temp: {temp.Name} = {temp.TemperatureCelsius.Value}");
-                                            sensors.Add(new JsonSensor 
-                                            { 
-                                                Id = $"{device.UniqueId}-temp-{temp.Channel}",
-                                                Name = temp.Name, 
-                                                Type = "Temperature", 
-                                                Value = temp.TemperatureCelsius.Value 
-                                            });
-                                        }
-                                    }
-                                    
-                                    foreach(var fan in device.SpeedSensors)
-                                    {
-                                        if (fan.Rpm.HasValue)
-                                        {
-                                            logger.Debug("MainLoop", $"Adding Fan: {fan.Name} = {fan.Rpm.Value}");
-                                            sensors.Add(new JsonSensor 
-                                            { 
-                                                Id = $"{device.UniqueId}-fan-{fan.Channel}",
-                                                Name = fan.Name, 
-                                                Type = "Fan", 
-                                                Value = fan.Rpm.Value 
-                                            });
-                                        }
-                                        else
-                                        {
-                                            logger.Debug("MainLoop", $"Skipping Fan {fan.Name} (No Value)");
-                                        }
-                                    }
-
-                                    if (sensors.Count > 0)
-                                    {
-                                        hardwareList.Add(new JsonHardware
-                                        {
-                                            Id = device.UniqueId,
-                                            Name = device.Name,
-                                            Type = "Cooler",
-                                            Sensors = sensors
+                                            Id = $"{device.UniqueId}-temp-{temp.Channel}",
+                                            Name = temp.Name,
+                                            Type = "Temperature",
+                                            Value = temp.TemperatureCelsius.Value
                                         });
                                     }
                                 }
-                                catch (Exception ex)
+
+                                foreach (var fan in device.SpeedSensors)
                                 {
-                                    logger.Error("MainLoop", $"Error refreshing {device.Name}", ex);
+                                    if (fan.Rpm.HasValue)
+                                    {
+                                        _logger.Debug("MainLoop", $"Adding Fan: {fan.Name} = {fan.Rpm.Value}");
+                                        sensors.Add(new JsonSensor
+                                        {
+                                            Id = $"{device.UniqueId}-fan-{fan.Channel}",
+                                            Name = fan.Name,
+                                            Type = "Fan",
+                                            Value = fan.Rpm.Value
+                                        });
+                                    }
+                                    else
+                                    {
+                                        _logger.Debug("MainLoop", $"Skipping Fan {fan.Name} (No Value)");
+                                    }
+                                }
+
+                                if (sensors.Count > 0)
+                                {
+                                    hardwareList.Add(new JsonHardware
+                                    {
+                                        Id = device.UniqueId,
+                                        Name = device.Name,
+                                        Type = "Cooler",
+                                        Sensors = sensors
+                                    });
                                 }
                             }
-
+                            catch (Exception ex)
+                            {
+                                _logger.Error("MainLoop", $"Error refreshing {device.Name}", ex);
+                            }
+                        }
 
                         string json = JsonConvert.SerializeObject(hardwareList, Formatting.None);
                         byte[] bytes = Encoding.UTF8.GetBytes(json);
@@ -210,70 +346,63 @@ namespace SensorBridge
                     }
                     catch (Exception ex)
                     {
-                         logger.Error("MainLoop", $"General Error", ex);
+                        _logger.Error("MainLoop", "General Error", ex);
                     }
 
-                    Thread.Sleep(1000);
+                    try
+                    {
+                        await Task.Delay(1000, ct);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
                 }
+            }
+            finally
+            {
+                linkedCts.Cancel();
+                try { await Task.WhenAll(new[] { heartbeatTask, watchdogTask }.Where(t => t != null)!); } catch { }
+
+                foreach (var device in _corsairDevices)
+                {
+                    try { device.Disconnect(); } catch { }
+                }
+                _corsairDevices.Clear();
+
+                try { computer?.Close(); } catch { }
+                _logger.Info("Shutdown", "Sensor bridge stopped cleanly.");
             }
         }
 
-        static void SendErrorAndExit(string errorMsg, int exitCode)
+        private void InitializeCorsairDevices()
         {
+            _logger.Info("Init", "Scanning for Corsair devices using dynamic discovery...");
+
             try
             {
-                using (var sender = new UdpClient())
-                {
-                    string json = $"{{\"error\": \"{errorMsg}\"}}";
-                    byte[] bytes = Encoding.UTF8.GetBytes(json);
-                    sender.Send(bytes, bytes.Length, new IPEndPoint(IPAddress.Loopback, APP_PORT));
-                }
-                Thread.Sleep(500); // Give it a moment to send
-            }
-            catch { }
-            
-            Environment.Exit(exitCode);
-        }
-
-        static bool IsAdministrator()
-        {
-            using (WindowsIdentity identity = WindowsIdentity.GetCurrent())
-            {
-                WindowsPrincipal principal = new WindowsPrincipal(identity);
-                return principal.IsInRole(WindowsBuiltInRole.Administrator);
-            }
-        }
-
-        static void InitializeCorsairDevices()
-        {
-            logger.Info("Init", "Scanning for Corsair devices using dynamic discovery...");
-            
-            try 
-            {
                 var supportedDevices = new List<IDevice>();
-                
-                // HID Devices
-                try 
+
+                try
                 {
-                    logger.Info("Init", "Checking HID Devices...");
-                    var hidDevices = HidDeviceManager.GetSupportedDevices(guardManager, logger, isPassive: true);
+                    _logger.Info("Init", "Checking HID Devices...");
+                    var hidDevices = HidDeviceManager.GetSupportedDevices(_guardManager, _logger, isPassive: true);
                     supportedDevices.AddRange(hidDevices);
                 }
                 catch (Exception ex)
                 {
-                    logger.Error("Init", "Error in HidDeviceManager", ex);
+                    _logger.Error("Init", "Error in HidDeviceManager", ex);
                 }
 
-                // SIUSB Devices
                 try
                 {
-                    logger.Info("Init", "Checking SiUsbXpress Devices...");
-                    var siDevices = SiUsbXpressDeviceManager.GetSupportedDevices(guardManager, logger, isPassive: true);
+                    _logger.Info("Init", "Checking SiUsbXpress Devices...");
+                    var siDevices = SiUsbXpressDeviceManager.GetSupportedDevices(_guardManager, _logger, isPassive: true);
                     supportedDevices.AddRange(siDevices);
                 }
                 catch (Exception ex)
                 {
-                    logger.Error("Init", "Error in SiUsbXpressDeviceManager", ex);
+                    _logger.Error("Init", "Error in SiUsbXpressDeviceManager", ex);
                 }
 
                 foreach (var device in supportedDevices)
@@ -282,23 +411,23 @@ namespace SensorBridge
                     {
                         if (device.Connect())
                         {
-                            corsairDevices.Add(device);
-                            logger.Info("Init", $"Connected to {device.Name} ({device.UniqueId})");
+                            _corsairDevices.Add(device);
+                            _logger.Info("Init", $"Connected to {device.Name} ({device.UniqueId})");
                         }
                         else
                         {
-                            logger.Info("Init", $"Failed to connect to {device.Name} ({device.UniqueId})");
+                            _logger.Info("Init", $"Failed to connect to {device.Name} ({device.UniqueId})");
                         }
                     }
                     catch (Exception ex)
                     {
-                        logger.Error("Init", $"Error connecting to {device.Name}", ex);
+                        _logger.Error("Init", $"Error connecting to {device.Name}", ex);
                     }
                 }
             }
             catch (Exception ex)
             {
-                 logger.Error("Init", "Fatal error during device initialization", ex);
+                _logger.Error("Init", "Fatal error during device initialization", ex);
             }
         }
     }
@@ -311,11 +440,14 @@ namespace SensorBridge
 
         public bool DebugEnabled => _debugEnabled;
 
-        public FileLogger(bool debugEnabled)
+        public FileLogger(bool debugEnabled, bool isService = false)
         {
             _debugEnabled = debugEnabled;
-            
-            string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+
+            var baseFolder = isService
+                ? Environment.SpecialFolder.CommonApplicationData
+                : Environment.SpecialFolder.ApplicationData;
+            string appData = Environment.GetFolderPath(baseFolder);
             string logFolder = Path.Combine(appData, "com.hydroscreen.app", "logs");
             
             try

@@ -12,6 +12,50 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 // Windows constant to hide the console window created by PowerShell.
 const CREATE_NO_WINDOW: u32 = 0x08000000;
+const BRIDGE_SERVICE_NAME: &str = "HydroScreenSensorBridge";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BridgeServiceState {
+    Running,
+    StartPending,
+    Stopped,
+    NotInstalled,
+}
+
+fn parse_sc_query_state(exit_success: bool, stdout: &str) -> BridgeServiceState {
+    if !exit_success {
+        return BridgeServiceState::NotInstalled;
+    }
+
+    for line in stdout.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("STATE") {
+            if trimmed.contains("RUNNING") {
+                return BridgeServiceState::Running;
+            }
+            if trimmed.contains("START_PENDING") {
+                return BridgeServiceState::StartPending;
+            }
+            return BridgeServiceState::Stopped;
+        }
+    }
+
+    BridgeServiceState::Stopped
+}
+
+fn query_bridge_service_state() -> BridgeServiceState {
+    match Command::new("sc.exe")
+        .args(&["query", BRIDGE_SERVICE_NAME])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+    {
+        Ok(output) => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            parse_sc_query_state(output.status.success(), &stdout)
+        }
+        Err(_) => BridgeServiceState::NotInstalled,
+    }
+}
 
 lazy_static::lazy_static! {
     static ref SPAWN_THREAD_RUNNING: AtomicBool = AtomicBool::new(false);
@@ -87,6 +131,23 @@ pub fn spawn_sensor_bridge(app: AppHandle, debug_mode: bool) {
     
     // Spawn Thread
     thread::spawn(move || {
+        match query_bridge_service_state() {
+            BridgeServiceState::Running | BridgeServiceState::StartPending => {
+                info!("{} Windows Service is active; skipping sidecar spawn.", BRIDGE_SERVICE_NAME);
+                SPAWN_THREAD_RUNNING.store(false, Ordering::SeqCst);
+                return;
+            }
+            BridgeServiceState::Stopped => {
+                warn!("{} Windows Service is installed but stopped.", BRIDGE_SERVICE_NAME);
+                let _ = app_for_thread.emit("sidecar-error", "Sensor bridge service is stopped");
+                SPAWN_THREAD_RUNNING.store(false, Ordering::SeqCst);
+                return;
+            }
+            BridgeServiceState::NotInstalled => {
+                info!("{} Windows Service not installed; using standalone sidecar fallback.", BRIDGE_SERVICE_NAME);
+            }
+        }
+
         let mut consecutive_failures = 0;
         SHOULD_RETRY.store(true, Ordering::SeqCst); // Ensure we try at least once
 
@@ -209,4 +270,33 @@ pub fn spawn_sensor_bridge(app: AppHandle, debug_mode: bool) {
             thread::sleep(Duration::from_secs(3));
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_running_service_state() {
+        let out = "SERVICE_NAME: HydroScreenSensorBridge\n        TYPE               : 10  WIN32_OWN_PROCESS\n        STATE              : 4  RUNNING\n";
+        assert_eq!(parse_sc_query_state(true, out), BridgeServiceState::Running);
+    }
+
+    #[test]
+    fn parses_start_pending_service_state() {
+        let out = "SERVICE_NAME: HydroScreenSensorBridge\n        STATE              : 2  START_PENDING\n";
+        assert_eq!(parse_sc_query_state(true, out), BridgeServiceState::StartPending);
+    }
+
+    #[test]
+    fn parses_stopped_service_state() {
+        let out = "SERVICE_NAME: HydroScreenSensorBridge\n        STATE              : 1  STOPPED\n";
+        assert_eq!(parse_sc_query_state(true, out), BridgeServiceState::Stopped);
+    }
+
+    #[test]
+    fn parses_not_installed_service_state() {
+        let out = "[SC] EnumQueryServicesStatus:OpenService FAILED 1060:\nThe specified service does not exist as an installed service.\n";
+        assert_eq!(parse_sc_query_state(false, out), BridgeServiceState::NotInstalled);
+    }
 }
