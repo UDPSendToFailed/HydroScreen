@@ -126,6 +126,10 @@ namespace SensorBridge
         private readonly ILogger _logger;
         private readonly IDeviceGuardManager _guardManager = new CorsairDevicesGuardManager();
         private readonly List<IDevice> _corsairDevices = new();
+        private readonly Dictionary<string, int> _deviceRefreshFailures = new();
+        private bool _needsDeviceRescan;
+        private bool _siUsbMissing;
+        private long _lastRescanTicks;
 
         public SensorBridgeWorker(BridgeConfig config, ILogger logger)
         {
@@ -227,7 +231,7 @@ namespace SensorBridge
                     return;
                 }
 
-                InitializeCorsairDevices();
+                ReconcileCorsairDevices(logDiscovery: true, ct);
 
                 // 2. Main Loop (UDP Sender)
                 using var sender = new UdpClient(new IPEndPoint(IPAddress.Loopback, 0));
@@ -262,7 +266,13 @@ namespace SensorBridge
                         {
                             _logger.Info("MainLoop", "Heartbeat received; resuming sensor polling.");
                             wasIdle = false;
+                            _needsDeviceRescan = true;
                         }
+                    }
+
+                    if (_needsDeviceRescan && Stopwatch.GetElapsedTime(_lastRescanTicks).TotalSeconds >= 10.0)
+                    {
+                        ReconcileCorsairDevices(logDiscovery: false, ct);
                     }
 
                     try
@@ -288,11 +298,13 @@ namespace SensorBridge
                             }));
                         }
 
+                        var disconnectedDevices = new List<IDevice>();
                         foreach (var device in _corsairDevices)
                         {
                             try
                             {
-                                device.Refresh();
+                                device.Refresh(ct);
+                                _deviceRefreshFailures[device.UniqueId] = 0;
 
                                 var sensors = new List<JsonSensor>();
 
@@ -343,10 +355,29 @@ namespace SensorBridge
                                     });
                                 }
                             }
+                            catch (OperationCanceledException)
+                            {
+                                break;
+                            }
                             catch (Exception ex)
                             {
                                 _logger.Error("MainLoop", $"Error refreshing {device.Name}", ex);
+                                int failures = _deviceRefreshFailures.GetValueOrDefault(device.UniqueId) + 1;
+                                _deviceRefreshFailures[device.UniqueId] = failures;
+                                if (failures >= 3)
+                                {
+                                    _logger.Warning("MainLoop", $"{device.Name} failed {failures} consecutive refreshes; disconnecting for reconnect.");
+                                    disconnectedDevices.Add(device);
+                                }
                             }
+                        }
+
+                        foreach (var failedDevice in disconnectedDevices)
+                        {
+                            try { failedDevice.Disconnect(); } catch { }
+                            _corsairDevices.Remove(failedDevice);
+                            _deviceRefreshFailures.Remove(failedDevice.UniqueId);
+                            _needsDeviceRescan = true;
                         }
 
                         string json = JsonConvert.SerializeObject(hardwareList, Formatting.None);
@@ -384,9 +415,15 @@ namespace SensorBridge
             }
         }
 
-        private void InitializeCorsairDevices()
+        private void ReconcileCorsairDevices(bool logDiscovery, CancellationToken ct)
         {
-            _logger.Info("Init", "Scanning for Corsair devices using dynamic discovery...");
+            _lastRescanTicks = Stopwatch.GetTimestamp();
+            if (logDiscovery)
+            {
+                _logger.Info("Init", "Scanning for Corsair devices using dynamic discovery...");
+            }
+
+            bool allConnected = true;
 
             try
             {
@@ -394,50 +431,73 @@ namespace SensorBridge
 
                 try
                 {
-                    _logger.Info("Init", "Checking HID Devices...");
+                    if (logDiscovery) _logger.Info("Init", "Checking HID Devices...");
                     var hidDevices = HidDeviceManager.GetSupportedDevices(_guardManager, _logger, isPassive: true);
                     supportedDevices.AddRange(hidDevices);
                 }
                 catch (Exception ex)
                 {
                     _logger.Error("Init", "Error in HidDeviceManager", ex);
+                    allConnected = false;
                 }
 
-                try
-                {
-                    _logger.Info("Init", "Checking SiUsbXpress Devices...");
-                    var siDevices = SiUsbXpressDeviceManager.GetSupportedDevices(_guardManager, _logger, isPassive: true);
-                    supportedDevices.AddRange(siDevices);
-                }
-                catch (Exception ex)
-                {
-                    _logger.Error("Init", "Error in SiUsbXpressDeviceManager", ex);
-                }
-
-                foreach (var device in supportedDevices)
+                if (!_siUsbMissing)
                 {
                     try
                     {
-                        if (device.Connect())
+                        if (logDiscovery) _logger.Info("Init", "Checking SiUsbXpress Devices...");
+                        var siDevices = SiUsbXpressDeviceManager.GetSupportedDevices(_guardManager, _logger, isPassive: true);
+                        supportedDevices.AddRange(siDevices);
+                    }
+                    catch (DllNotFoundException)
+                    {
+                        _siUsbMissing = true;
+                        _logger.Debug("Init", "SiUsbXpress driver DLL not present; skipping SiUsbXpress discovery.");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Error("Init", "Error in SiUsbXpressDeviceManager", ex);
+                    }
+                }
+
+                var connectedIds = _corsairDevices.Select(d => d.UniqueId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var device in supportedDevices)
+                {
+                    if (ct.IsCancellationRequested) break;
+                    if (connectedIds.Contains(device.UniqueId)) continue;
+
+                    try
+                    {
+                        if (device.Connect(ct))
                         {
                             _corsairDevices.Add(device);
+                            _deviceRefreshFailures[device.UniqueId] = 0;
+                            connectedIds.Add(device.UniqueId);
                             _logger.Info("Init", $"Connected to {device.Name} ({device.UniqueId})");
                         }
                         else
                         {
-                            _logger.Info("Init", $"Failed to connect to {device.Name} ({device.UniqueId})");
+                            allConnected = false;
+                            _logger.Info("Init", $"Failed to connect to {device.Name} ({device.UniqueId}); will retry.");
+                            try { device.Disconnect(); } catch { }
                         }
                     }
                     catch (Exception ex)
                     {
-                        _logger.Error("Init", $"Error connecting to {device.Name}", ex);
+                        allConnected = false;
+                        _logger.Error("Init", $"Error connecting to {device.Name} ({device.UniqueId}); will retry.", ex);
+                        try { device.Disconnect(); } catch { }
                     }
                 }
             }
             catch (Exception ex)
             {
-                _logger.Error("Init", "Fatal error during device initialization", ex);
+                allConnected = false;
+                _logger.Error("Init", "Fatal error during device discovery", ex);
             }
+
+            _needsDeviceRescan = !allConnected;
         }
     }
 
